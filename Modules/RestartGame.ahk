@@ -63,9 +63,13 @@ RestartGame_Init() {
 
 RestartGame_Start() {
     global g_RestartGame_Enabled, g_RestartGame_LoopCount, g_RestartGame_RetryCount, g_RestartGame_Mode
+    global g_RoomCreation_Step, g_RoomCreation_Retries, g_UnknownCount
     g_RestartGame_Enabled := true
     g_RestartGame_LoopCount := 0
     g_RestartGame_RetryCount := 0
+    g_RoomCreation_Step := 0
+    g_RoomCreation_Retries := 0
+    g_UnknownCount := 0
     RestartGame_PhaseStart("杀进程+启动+登录+建房")
     RestartGame_Transition("KILLING_PROCESS")
     return true
