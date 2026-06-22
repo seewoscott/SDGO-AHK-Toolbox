@@ -30,7 +30,7 @@ AutoFarmMulti_Start() {
 AutoFarmMulti_Stop() {
     global g_AutoFarmMulti_Enabled
     g_AutoFarmMulti_Enabled := false
-    WinActivate("ahk_exe gonline.exe")
+    GameUtils.ActivateGame()
     SendInput("{LCtrl up}")
     Logger.Info("AutoFarmMulti: 已停止 (共 " g_AutoFarmMulti_RunCount " 局)")
 }
@@ -82,7 +82,7 @@ AutoFarmMulti_Tick() {
         if (AutoFarmMulti_SmartSearch(&fx, &fy, "*90 " GameUtils.ResolveImagePath(A_ScriptDir "\Data\Images\start_btn.png"), gx + gw/2, gy + gh/2, gx + gw, gy + gh)) {
             Logger.Debug("[多人] 检测到开始按钮, 按F5")
             Sleep(500)
-            WinActivate("ahk_exe gonline.exe")
+            GameUtils.ActivateGame()
             Sleep(300)
             SendInput("{F5 down}")
             Sleep(200)
@@ -97,7 +97,7 @@ AutoFarmMulti_Tick() {
             g_AutoFarmMulti_LoadRetries := 0
             Logger.Debug("[多人] 检测到战斗UI, 开场连击")
             Sleep(800)
-            WinActivate("ahk_exe gonline.exe")
+            GameUtils.ActivateGame()
             Loop 4 {
                 Send("{LCtrl down}")
                 Sleep(50)
@@ -111,7 +111,7 @@ AutoFarmMulti_Tick() {
         } else if (A_TickCount - g_AutoFarmMulti_StateStart > 30000) {
             g_AutoFarmMulti_LoadRetries++
             Logger.Warn("[多人] 加载超时, 按Enter取消弹窗 (第 " g_AutoFarmMulti_LoadRetries " 次)")
-            WinActivate("ahk_exe gonline.exe")
+            GameUtils.ActivateGame()
             Sleep(300)
             SendInput("{Enter down}")
             Sleep(200)
@@ -157,7 +157,7 @@ AutoFarmMulti_Tick() {
     case "RESULT":
         Logger.Debug("[多人] 结算清理...")
         Sleep(1500)
-        WinActivate("ahk_exe gonline.exe")
+        GameUtils.ActivateGame()
         Loop 25 {
             if (!g_AutoFarmMulti_Enabled || !GameUtils.IsGameRunning())
                 return

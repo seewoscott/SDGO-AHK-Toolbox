@@ -22,7 +22,7 @@ class GameUtils {
 
     ; 刷新游戏窗口句柄
     static RefreshWindow() {
-        this.g_hWnd := WinExist("ahk_exe gonline.exe")
+        this.g_hWnd := WinExist("ahk_exe " ConfigManager.GameExe)
         return this.g_hWnd != 0
     }
 
@@ -33,13 +33,13 @@ class GameUtils {
         if (A_TickCount == this.s_LastRunningTick)
             return this.s_LastRunningResult
         this.s_LastRunningTick := A_TickCount
-        this.s_LastRunningResult := WinExist("ahk_exe gonline.exe") != 0
+        this.s_LastRunningResult := WinExist("ahk_exe " ConfigManager.GameExe) != 0
         return this.s_LastRunningResult
     }
 
     ; 游戏窗口是否激活(前景)
     static IsGameActive() {
-        return WinActive("ahk_exe gonline.exe") != 0
+        return WinActive("ahk_exe " ConfigManager.GameExe) != 0
     }
 
     ; 获取窗口位置和大小 (Tick级缓存)
@@ -72,7 +72,7 @@ class GameUtils {
         if (delay == "")
             delay := Random(this.g_KeyDelayMin, this.g_KeyDelayMax)
         if (this.g_InputMode == "control")
-            ControlSend(key, , "ahk_exe gonline.exe")
+            ControlSend(key, , "ahk_exe " ConfigManager.GameExe)
         else {
             this.ActivateGame()
             Send(key)
@@ -91,7 +91,7 @@ class GameUtils {
     static GameClick(x, y, button := "Left", clicks := 1) {
         if (!this.IsGameRunning())
             return false
-        ControlClick("x" x " y" y, "ahk_exe gonline.exe", , button, clicks)
+        ControlClick("x" x " y" y, "ahk_exe " ConfigManager.GameExe, , button, clicks)
         return true
     }
 
@@ -133,13 +133,32 @@ class GameUtils {
         return false
     }
 
-    ; 根据当前桌面分辨率选择图像模板
-    ; 优先匹配 <name>_<W>x<H>.png，不存在则回退 <name>.png
+    ; 4-tier 图像路径回退: 服务端+分辨率 → 服务端 → 全局+分辨率 → 全局
+    ;   Tier 1: Data\Images\<ServerProfile>_<name>_<WxH>.png
+    ;   Tier 2: Data\Images\<ServerProfile>_<name>.png
+    ;   Tier 3: Data\Images\<name>_<WxH>.png
+    ;   Tier 4: Data\Images\<name>.png (原始路径)
     static ResolveImagePath(baseName) {
         global g_ResolutionProfile
-        specific := StrReplace(baseName, ".png", "_" g_ResolutionProfile ".png")
-        if (FileExist(specific))
-            return specific
+        SplitPath(baseName, &name, &dir)
+        nameNoExt := StrReplace(name, ".png", "")
+
+        if (ConfigManager.ServerProfile != "") {
+            tier1 := dir "\" ConfigManager.ServerProfile "_" nameNoExt "_" g_ResolutionProfile ".png"
+            if (FileExist(tier1))
+                return tier1
+        }
+
+        if (ConfigManager.ServerProfile != "") {
+            tier2 := dir "\" ConfigManager.ServerProfile "_" nameNoExt ".png"
+            if (FileExist(tier2))
+                return tier2
+        }
+
+        tier3 := dir "\" nameNoExt "_" g_ResolutionProfile ".png"
+        if (FileExist(tier3))
+            return tier3
+
         return baseName
     }
 
@@ -147,7 +166,7 @@ class GameUtils {
     static CheckLogFile(pattern, gameDir := "") {
         if (gameDir == "")
             gameDir := ConfigManager.GameDir
-        logDir := gameDir "\zoG_log"
+        logDir := ConfigManager.LogDir != "" ? ConfigManager.LogDir : gameDir "\zoG_log"
         if (!DirExist(logDir))
             return false
         latestFile := ""
@@ -181,7 +200,7 @@ class GameUtils {
     ; 使用 ControlSend 后台输入, 不要求窗口激活 (D3D9 游戏兼容)
     ; 返回 true/false
     static DoLogin() {
-        hGame := "ahk_exe gonline.exe"
+        hGame := "ahk_exe " ConfigManager.GameExe
         phaseStart := A_TickCount
 
         if (!this.IsGameRunning())
@@ -201,15 +220,15 @@ class GameUtils {
         CoordMode "Mouse", "Client"
 
         ; 密码框
-        WinActivate("ahk_exe gonline.exe")
+        WinActivate("ahk_exe " ConfigManager.GameExe)
         Sleep(500)
         MouseMove(passX, passY)
         Sleep(500), Click(), Sleep(2000)
-        SendInput("SeewoScott")
+        SendInput(ConfigManager.LoginPassword)
         Sleep(3000)
         ; 确认登录
         Logger.Debug("[登录] 点击登入按钮 (" confirmX "," confirmY ")")
-        WinActivate("ahk_exe gonline.exe")
+        WinActivate("ahk_exe " ConfigManager.GameExe)
         Sleep(500)
         MouseMove(confirmX, confirmY)
         Sleep(500)
@@ -223,7 +242,7 @@ class GameUtils {
             Sleep(8000)
             chanDetectX := ConfigManager.ReadCoord("AntiAFK", "Channel_DetectPixel_X", 400)
             chanDetectY := ConfigManager.ReadCoord("AntiAFK", "Channel_DetectPixel_Y", 350)
-            found := PixelSearch(&px, &py, chanDetectX-15, chanDetectY-15, chanDetectX+15, chanDetectY+15, 0x071940, 40)
+            found := PixelSearch(&px, &py, chanDetectX-15, chanDetectY-15, chanDetectX+15, chanDetectY+15, ConfigManager.LoginChannelColor, 40)
             if (found) {
                 Logger.Debug("[登录] 检测: 频道选择画面 ✓")
                 break
@@ -237,7 +256,7 @@ class GameUtils {
 
         ; 频道-任务模式
         Logger.Info("[频道] 选择任务模式 (" chanTaskX "," chanTaskY ")")
-        WinActivate("ahk_exe gonline.exe")
+        WinActivate("ahk_exe " ConfigManager.GameExe)
         Sleep(500)
         CoordMode "Mouse", "Client"
         MouseMove(chanTaskX, chanTaskY)
@@ -248,11 +267,11 @@ class GameUtils {
             Send "{LButton Up}"
             Sleep(800)
         }
-        ControlClick("x" chanTaskX " y" chanTaskY, "ahk_exe gonline.exe")
+        ControlClick("x" chanTaskX " y" chanTaskY, "ahk_exe " ConfigManager.GameExe)
 
         ; 验证: 进入频道列表
         imgCL := GameUtils.ResolveImagePath(A_ScriptDir "\Data\Images\channel_list.png")
-        WinGetPos(&gx, &gy, &gw, &gh, "ahk_exe gonline.exe")
+        WinGetPos(&gx, &gy, &gw, &gh, "ahk_exe " ConfigManager.GameExe)
         Loop 3 {
             Sleep(3000)
             if (ImageSearch(&px, &py, gx, gy, gx + gw, gy + gh, "*120 " imgCL)) {
@@ -268,7 +287,7 @@ class GameUtils {
 
         ; 频道-初级频道1
         Logger.Info("[频道] 选择初级频道1 (" chanSelX "," chanSelY ")")
-        WinActivate("ahk_exe gonline.exe")
+        WinActivate("ahk_exe " ConfigManager.GameExe)
         Sleep(500)
         CoordMode "Mouse", "Client"
         MouseMove(chanSelX, chanSelY)
@@ -279,11 +298,11 @@ class GameUtils {
             Send "{LButton Up}"
             Sleep(800)
         }
-        ControlClick("x" chanSelX " y" chanSelY, "ahk_exe gonline.exe")
+        ControlClick("x" chanSelX " y" chanSelY, "ahk_exe " ConfigManager.GameExe)
 
         ; 验证: 进入大厅
         imgLobby := GameUtils.ResolveImagePath(A_ScriptDir "\Data\Images\lobby.png")
-        WinGetPos(&gx, &gy, &gw, &gh, "ahk_exe gonline.exe")
+        WinGetPos(&gx, &gy, &gw, &gh, "ahk_exe " ConfigManager.GameExe)
         Loop 3 {
             Sleep(3000)
             if (ImageSearch(&px, &py, gx, gy, gx + gw, gy + gh, "*120 " imgLobby)) {

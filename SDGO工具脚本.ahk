@@ -76,6 +76,7 @@ global g_Ctrl_FarmWatchdog := 0
 global g_Ctrl_GameStatus := 0
 global g_Ctrl_AutoFarm_RunCount := 0
 global g_Ctrl_LogLevel := 0
+global g_Ctrl_ServerProfile := 0
 
 ; 全局控制热键修饰符
 global g_HotkeyMod := ""
@@ -117,11 +118,14 @@ Init() {
     ; 读取热键修饰符
     g_HotkeyMod := ConfigManager.Read("General", "HotkeyModifier", "^!")
 
+    ; 加载服务端配置 (必须在 GameUtils.Init() 之前)
+    ConfigManager.LoadServerConfig()
+
     ; 初始化 GameUtils
     if (GameUtils.Init()) {
         Logger.Info("游戏窗口已检测到 (hWnd=" GameUtils.g_hWnd ")")
     } else {
-        Logger.Warn("未检测到游戏窗口 (gonline.exe)")
+        Logger.Warn("未检测到游戏窗口 (" ConfigManager.GameExe ")")
     }
 
     ; 初始化所有模块
@@ -195,14 +199,14 @@ CaptureCoords() {
 RegisterGameHotkeys() {
     ; F1~F8: 连招宏播放 (使用 .Bind() 避免闭包变量捕获问题)
     loop 8 {
-        HotIfWinActive("ahk_exe gonline.exe")
+        HotIfWinActive("ahk_exe " ConfigManager.GameExe)
         Hotkey("F" A_Index, ComboMacros_PlayMacro.Bind(A_Index), "On")
         HotIfWinActive()  ; 重置条件
     }
 
     ; Ctrl+Alt+F1~F8: 连招宏录制
     loop 8 {
-        HotIfWinActive("ahk_exe gonline.exe")
+        HotIfWinActive("ahk_exe " ConfigManager.GameExe)
         Hotkey(g_HotkeyMod "F" A_Index, ComboMacros_StartRecording.Bind(A_Index), "On")
         HotIfWinActive()
     }
@@ -274,11 +278,11 @@ EmergencyStop() {
 ; --- 构建 GUI ---
 BuildGui() {
     global g_Gui, g_Tab, g_LogEdit, g_StatusBar, g_Ctrl_RestartGame, g_Ctrl_LogLevel, g_HotkeyMod
-    global g_Ctrl_AutoFarm, g_Ctrl_AutoFarm_RunCount
+    global g_Ctrl_AutoFarm, g_Ctrl_AutoFarm_RunCount, g_Ctrl_ServerProfile
     global g_Ctrl_AutoFarmMulti, g_Ctrl_AutoFarmMulti_RunCount
     global g_Ctrl_FarmWatchdog, g_Ctrl_FarmWatchdog_RestartCount
 
-    g_Gui := Gui("+Resize +MinSize500x400 +MaximizeBox", APP_NAME " v" APP_VERSION)
+    g_Gui := Gui("+Resize +MinSize500x400 +MaximizeBox", APP_NAME " v" APP_VERSION " — " ConfigManager.ServerProfile)
     g_Gui.OnEvent("Close", GuiClose)
     g_Gui.OnEvent("Size", GuiSize)
     g_Gui.SetFont("s9", "Segoe UI")
@@ -402,6 +406,20 @@ BuildGui() {
     ddlInput := g_Gui.Add("DropDownList", "x+10 w120 vDdlInputMode Choose" (GameUtils.g_InputMode == "control" ? 1 : 2), ["ControlSend(后台)", "Send(前台)"])
     ddlInput.OnEvent("Change", (*) => SaveSettings())
 
+    ; 服务端配置
+    g_Gui.Add("Text", "x40 y+10 w120", "服务端配置:")
+    serverProfiles := ConfigManager.GetServerProfiles()
+    ddlServer := g_Gui.Add("DropDownList", "x+10 w140 vDdlServerProfile", serverProfiles)
+    ddlServer.OnEvent("Change", (*) => OnServerProfileChange())
+    g_Ctrl_ServerProfile := ddlServer
+    ; 设置当前选中项
+    for i, profile in serverProfiles {
+        if (profile == ConfigManager.ServerProfile) {
+            ddlServer.Choose(i)
+            break
+        }
+    }
+
     ; 看门狗设置 (刷图停滞/游戏缺失检测)
     g_Gui.Add("Text", "x40 y+10 w120", "触发持续(秒):")
     editWD := g_Gui.Add("Edit", "x+10 w50 vEditWatchDuration", g_FarmWatchdog_Duration)
@@ -433,7 +451,7 @@ FormatGameStatusText() {
             return "🎮 游戏运行中 | 大小: " rect.w "x" rect.h " | 输入: " GameUtils.g_InputMode
         return "🎮 游戏运行中 | 输入: " GameUtils.g_InputMode
     }
-    return "⏸ 游戏未运行 | 等待 gonline.exe..."
+    return "⏸ 游戏未运行 | 等待 " ConfigManager.GameExe "..."
 }
 
 ; --- 获取日志级别下拉框索引 ---
@@ -494,6 +512,18 @@ SaveSettings() {
         ConfigManager.Write("FarmWatchdog", "Watch_Duration", saved.EditWatchDuration)
         g_FarmWatchdog_Duration := Integer(saved.EditWatchDuration)
     }
+}
+
+; 服务端配置切换回调
+OnServerProfileChange() {
+    global g_Gui, g_Ctrl_ServerProfile
+    selected := g_Ctrl_ServerProfile.Text
+    if (selected == "" || selected == ConfigManager.ServerProfile)
+        return
+    ConfigManager.Write("Game", "ServerProfile", selected)
+    ConfigManager.LoadServerConfig()
+    g_Gui.Title := APP_NAME " v" APP_VERSION " — " ConfigManager.ServerProfile
+    Logger.Info("服务端配置已切换: " ConfigManager.ServerProfile)
 }
 
 ; --- GUI 定时器: 刷新状态 ---
@@ -590,6 +620,13 @@ UpdateGuiStatus() {
         if (parts.Length == 0)
             parts.Push("空闲")
         g_StatusBar.SetText(JoinArr(parts, " | "))
+    }
+    ; 服务端配置: 模块运行时禁止切换
+    if (g_Ctrl_ServerProfile) {
+        anyRunning := g_AntiAFK_Enabled || g_AutoFarm_Enabled || g_ComboMacros_Enabled
+            || g_DailyRewards_Enabled || g_RestartGame_Enabled
+            || g_AutoFarmMulti_Enabled || g_FarmWatchdog_Enabled
+        g_Ctrl_ServerProfile.Enabled := !anyRunning
     }
 }
 
