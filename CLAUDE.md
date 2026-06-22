@@ -88,7 +88,7 @@ SDGO工具脚本.ahk (Hub)
 | 节 | 关键选项 |
 |----|----------|
 | `[General]` | `HotkeyModifier` (默认 `^!`=Ctrl+Alt), `EmergencyStop` (Esc), `GameExe` (gonline.exe) |
-| `[Game]` | `InputMode` (control/setforeground), `KeyDelayMin`/`Max` (30~80ms), `WindowWidth`/`Height` |
+| `[Game]` | `InputMode` (control/setforeground), `WindowWidth`/`Height` |
 | `[RestartGame]` | `Mode` (once/loop), `MaxLoops` (0=无限), `GamePath`/`GameDir`, 导航坐标, 各阶段超时 |
 | `[AutoFarm]` | `MaxRuns` (0=无限刷图) |
 | `[FarmWatchdog]` | `Watch_Duration` (停滞检测秒数, 默认 120) |

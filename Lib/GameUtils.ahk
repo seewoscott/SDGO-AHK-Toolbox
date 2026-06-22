@@ -4,16 +4,12 @@
 class GameUtils {
     static g_hWnd := 0
     static g_InputMode := "control"
-    static g_KeyDelayMin := 30
-    static g_KeyDelayMax := 80
     static g_WinW := 1024
     static g_WinH := 768
 
     ; 初始化: 检测游戏窗口并设置输入模式
     static Init() {
         this.g_InputMode := ConfigManager.Read("Game", "InputMode", "control")
-        this.g_KeyDelayMin := ConfigManager.Read("Game", "KeyDelayMin", 30)
-        this.g_KeyDelayMax := ConfigManager.Read("Game", "KeyDelayMax", 80)
         this.g_WinW := ConfigManager.Read("Game", "WindowWidth", 1024)
         this.g_WinH := ConfigManager.Read("Game", "WindowHeight", 768)
         this.RefreshWindow()
@@ -69,8 +65,6 @@ class GameUtils {
     static SendGameKey(key, delay := "") {
         if (!this.IsGameRunning())
             return false
-        if (delay == "")
-            delay := Random(this.g_KeyDelayMin, this.g_KeyDelayMax)
         if (this.g_InputMode == "control")
             ControlSend(key, , "ahk_exe " ConfigManager.GameExe)
         else {

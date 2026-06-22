@@ -386,15 +386,6 @@ BuildGui() {
     ; editMaxRuns := g_Gui.Add("Edit", "x+10 w80 vEditMaxRuns", g_AutoFarm_MaxRuns)
     ; editMaxRuns.OnEvent("Change", (*) => SaveSettings())
 
-    ; 按键延迟范围
-    g_Gui.Add("Text", "x40 y+10 w120", "按键延迟 (ms):")
-    g_Gui.Add("Text", "x+5 w30", "最小")
-    editKeyMin := g_Gui.Add("Edit", "x+5 w50 vEditKeyMin", GameUtils.g_KeyDelayMin)
-    editKeyMin.OnEvent("Change", (*) => SaveSettings())
-    g_Gui.Add("Text", "x+10 w30", "最大")
-    editKeyMax := g_Gui.Add("Edit", "x+5 w50 vEditKeyMax", GameUtils.g_KeyDelayMax)
-    editKeyMax.OnEvent("Change", (*) => SaveSettings())
-
     ; 日志级别
     g_Gui.Add("Text", "x40 y+10 w120", "日志级别:")
     ddlLog := g_Gui.Add("DropDownList", "x+10 w80 vDdlLogLevel Choose" GetLogLevelIndex(), ["DEBUG", "INFO", "WARN", "ERROR"])
@@ -482,16 +473,6 @@ SaveSettings() {
     if (saved.HasProp("EditMaxRuns") && saved.EditMaxRuns != "") {
         ConfigManager.Write("AutoFarm", "MaxRuns", saved.EditMaxRuns)
         g_AutoFarm_MaxRuns := Integer(saved.EditMaxRuns)
-    }
-
-    ; 保存按键延迟
-    if (saved.HasProp("EditKeyMin") && saved.EditKeyMin != "") {
-        ConfigManager.Write("Game", "KeyDelayMin", saved.EditKeyMin)
-        GameUtils.g_KeyDelayMin := Integer(saved.EditKeyMin)
-    }
-    if (saved.HasProp("EditKeyMax") && saved.EditKeyMax != "") {
-        ConfigManager.Write("Game", "KeyDelayMax", saved.EditKeyMax)
-        GameUtils.g_KeyDelayMax := Integer(saved.EditKeyMax)
     }
 
     ; 保存日志级别
