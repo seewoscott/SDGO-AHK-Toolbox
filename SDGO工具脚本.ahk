@@ -278,7 +278,7 @@ EmergencyStop() {
 ; --- 构建 GUI ---
 BuildGui() {
     global g_Gui, g_Tab, g_LogEdit, g_StatusBar, g_Ctrl_RestartGame, g_Ctrl_LogLevel, g_HotkeyMod
-    global g_Ctrl_AutoFarm, g_Ctrl_AutoFarm_RunCount
+    global g_Ctrl_AutoFarm, g_Ctrl_AutoFarm_RunCount, g_Ctrl_ServerProfile
     global g_Ctrl_AutoFarmMulti, g_Ctrl_AutoFarmMulti_RunCount
     global g_Ctrl_FarmWatchdog, g_Ctrl_FarmWatchdog_RestartCount
 
