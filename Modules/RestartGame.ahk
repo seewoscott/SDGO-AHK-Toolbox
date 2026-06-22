@@ -129,7 +129,7 @@ RestartGame_ProcessState() {
 
 ; === KILLING_PROCESS ===
 RestartGame_DoKillProcess() {
-    exeName := ConfigManager.Read("General", "GameExe", "gonline.exe")
+    exeName := ConfigManager.GameExe
     tier := ""
     if (WinExist("ahk_exe " exeName)) {
         WinKill("ahk_exe " exeName)
@@ -177,7 +177,7 @@ RestartGame_DoLaunchGame() {
     ; 点击進入游戲
     btnX := ConfigManager.ReadCoord("RestartGame", "Launcher_Button_X", 2126)
     btnY := ConfigManager.ReadCoord("RestartGame", "Launcher_Button_Y", 997)
-    hLauncher := WinExist("ahk_exe SDGO_Launcher.exe")
+    hLauncher := WinExist("ahk_exe " ConfigManager.LauncherExe)
     if (hLauncher) {
         WinActivate(hLauncher)
         WinWaitActive(hLauncher, , 3)
@@ -190,7 +190,7 @@ RestartGame_DoLaunchGame() {
     }
     Sleep(2000)
 
-    exeName := ConfigManager.Read("General", "GameExe", "gonline.exe")
+    exeName := ConfigManager.GameExe
     if (!GameUtils.WaitFor(ObjBindMethod(GameUtils, "IsGameRunning"), 60000, 1000)) {
         Logger.Error("RestartGame: 等待 gonline.exe 超时")
         RestartGame_Transition("ERROR")
@@ -232,7 +232,7 @@ global g_StepTimer := 0
 global g_UnknownCount := 0
 
 RestartGame_DetectScene(target := "", retries := 1) {
-    WinGetPos(&wx, &wy, &ww, &wh, "ahk_exe gonline.exe")
+    WinGetPos(&wx, &wy, &ww, &wh, "ahk_exe " ConfigManager.GameExe)
     if (wx == "" || ww == 0) {
         Logger.Info("[检测] WinGetPos 失败, wx=" wx " ww=" ww)
         return "UNKNOWN"
@@ -339,7 +339,7 @@ RestartGame_DoRoomCreation() {
         g_StepTimer := A_TickCount
         MouseMove(nameFieldX, nameFieldY)
         Sleep(300), Click(), Sleep(500)
-        A_Clipboard := "炸狗房，新手来~"
+        A_Clipboard := ConfigManager.RoomName
         SendInput("^a"), Sleep(200)
         SendInput("{Backspace}"), Sleep(200)
         SendInput("^v"), Sleep(300)
@@ -364,7 +364,7 @@ RestartGame_DoRoomCreation() {
             MouseMove(confirmBtnX, confirmBtnY)
             Sleep(200), Click(), Sleep(400)
         }
-        ControlClick("x" confirmBtnX " y" confirmBtnY, "ahk_exe gonline.exe")
+        ControlClick("x" confirmBtnX " y" confirmBtnY, "ahk_exe " ConfigManager.GameExe)
         Sleep(4000)
         newScene := RestartGame_DetectScene("IN_ROOM", 3)
         if (newScene == "IN_ROOM") {

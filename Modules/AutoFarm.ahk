@@ -29,7 +29,7 @@ AutoFarm_Start() {
 AutoFarm_Stop() {
     global g_AutoFarm_Enabled
     g_AutoFarm_Enabled := false
-    WinActivate("ahk_exe gonline.exe")
+    GameUtils.ActivateGame()
     SendInput("{LCtrl up}")
     Logger.Info("AutoFarm: 已停止 (共 " g_AutoFarm_RunCount " 局)")
 }
@@ -82,7 +82,7 @@ AutoFarm_Tick() {
         if (AutoFarm_SmartSearch(&fx, &fy, "*90 " GameUtils.ResolveImagePath(A_ScriptDir "\Data\Images\start_btn.png"), gx + gw/2, gy + gh/2, gx + gw, gy + gh)) {
             Logger.Debug("[单人] 检测到开始按钮, 按F5")
             Sleep(500)
-            WinActivate("ahk_exe gonline.exe")
+            GameUtils.ActivateGame()
             Sleep(300)
             SendInput("{F5 down}")
             Sleep(200)
@@ -102,7 +102,7 @@ AutoFarm_Tick() {
             g_AutoFarm_StateStart := A_TickCount
         } else if (A_TickCount - g_AutoFarm_StateStart > 30000) {
             Logger.Warn("[单人] 加载超时, 按Enter+F5重试")
-            WinActivate("ahk_exe gonline.exe")
+            GameUtils.ActivateGame()
             SendInput("{Enter down}")
             Sleep(200)
             SendInput("{Enter up}")
@@ -138,7 +138,7 @@ AutoFarm_Tick() {
     case "RESULT":
         Logger.Debug("[单人] 结算清理...")
         Sleep(1500)
-        WinActivate("ahk_exe gonline.exe")
+        GameUtils.ActivateGame()
         Loop 15 {
             if (!g_AutoFarm_Enabled || !GameUtils.IsGameRunning())
                 return
