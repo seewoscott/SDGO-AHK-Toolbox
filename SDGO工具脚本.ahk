@@ -29,6 +29,7 @@ global g_ResolutionProfile := ""
 #Include "Modules\RestartGame.ahk"
 #Include "Modules\AutoFarmMulti.ahk"
 #Include "Modules\FarmWatchdog.ahk"
+#Include "Modules\AutoMatch.ahk"
 
 ; --- 暂禁模块桩定义 ---
 ; 这些桩允许主脚本在未加载模块时编译通过, 所有调用均为空操作
@@ -73,6 +74,8 @@ global g_Ctrl_RestartGame := 0
 global g_Ctrl_AutoFarmMulti := 0
 global g_Ctrl_AutoFarmMulti_RunCount := 0
 global g_Ctrl_FarmWatchdog := 0
+global g_Ctrl_AutoMatch := 0
+global g_Ctrl_AutoMatch_RunCount := 0
 global g_Ctrl_GameStatus := 0
 global g_Ctrl_AutoFarm_RunCount := 0
 global g_Ctrl_LogLevel := 0
@@ -136,6 +139,7 @@ Init() {
     RestartGame_Init()
     FarmWatchdog_Init()
     AutoFarmMulti_Init()
+    AutoMatch_Init()
 
     ; 注册全局热键
     RegisterGlobalHotkeys()
@@ -164,6 +168,7 @@ RegisterGlobalHotkeys() {
     Hotkey(mod "F5", (*) => ToggleModule("RestartGame"), "On")
     Hotkey(mod "F6", (*) => ToggleModule("FarmWatchdog"), "On")
     Hotkey(mod "F7", (*) => ToggleModule("AutoFarmMulti"), "On")
+    Hotkey(mod "F8", (*) => ToggleModule("AutoMatch"), "On")
 
     ; F12: 坐标捕获
     Hotkey("F12", (*) => CaptureCoords(), "On")
@@ -257,6 +262,12 @@ ToggleModule(module) {
         else
             AutoFarmMulti_Start()
         UpdateGuiStatus()
+    case "AutoMatch":
+        if (g_AutoMatch_Enabled)
+            AutoMatch_Stop()
+        else
+            AutoMatch_Start()
+        UpdateGuiStatus()
     }
 }
 
@@ -270,6 +281,7 @@ EmergencyStop() {
     RestartGame_Stop()
     FarmWatchdog_Stop()
     AutoFarmMulti_Stop()
+    AutoMatch_Stop()
     UpdateGuiStatus()
     ToolTip("⚠ 紧急停止 - 所有模块已停止", , , 2)
     SetTimer(() => ToolTip(, , , 2), -3000)
@@ -281,6 +293,7 @@ BuildGui() {
     global g_Ctrl_AutoFarm, g_Ctrl_AutoFarm_RunCount, g_Ctrl_ServerProfile
     global g_Ctrl_AutoFarmMulti, g_Ctrl_AutoFarmMulti_RunCount
     global g_Ctrl_FarmWatchdog, g_Ctrl_FarmWatchdog_RestartCount
+    global g_Ctrl_AutoMatch, g_Ctrl_AutoMatch_RunCount, g_AutoMatch_MaxRuns
 
     g_Gui := Gui("+Resize +MinSize500x400 +MaximizeBox", APP_NAME " v" APP_VERSION " — " ConfigManager.ServerProfile)
     g_Gui.OnEvent("Close", GuiClose)
@@ -361,6 +374,15 @@ BuildGui() {
     btnWatch.OnEvent("Click", (*) => ToggleModule("FarmWatchdog"))
     g_Ctrl_FarmWatchdog := btnWatch
 
+    ; 模块7: AutoMatch
+    g_Gui.Add("GroupBox", "x20 y+10 w460 h70", "刷场次 (AutoMatch)")
+    g_Gui.Add("Text", "xp+20 yp+25 w200", "新服刷场次 — 检测开始→F5→战斗→结算")
+    runCountAM := g_Gui.Add("Text", "x300 yp w70 vTxtRunCountAM", "场次: 0")
+    g_Ctrl_AutoMatch_RunCount := runCountAM
+    btnAutoMatch := g_Gui.Add("Button", "x380 yp-5 w80 h28 vBtnAutoMatch", "启动")
+    btnAutoMatch.OnEvent("Click", (*) => ToggleModule("AutoMatch"))
+    g_Ctrl_AutoMatch := btnAutoMatch
+
     ; 紧急停止按钮
     btnStop := g_Gui.Add("Button", "x20 y+20 w100 h35 vBtnStop", "紧急停止 (Esc)")
     btnStop.OnEvent("Click", (*) => EmergencyStop())
@@ -368,7 +390,7 @@ BuildGui() {
 
     ; 底部热键说明
     g_Gui.SetFont("s8")
-    g_Gui.Add("Text", "x140 yp+5 w340 h30", "快捷键: " g_HotkeyMod "F5=建房 F6=监控 | F12=坐标 | " g_HotkeyMod "R=重载 | " g_HotkeyMod "Esc=停止")
+    g_Gui.Add("Text", "x140 yp+5 w340 h30", "快捷键: " g_HotkeyMod "F2=单人 F5=建房 F6=监控 F7=多人 F8=场次 | F12=坐标 | " g_HotkeyMod "R=重载 | " g_HotkeyMod "Esc=停止")
 
     ; ===== 选项卡2: 设置 =====
     g_Tab.UseTab(2)
@@ -410,6 +432,11 @@ BuildGui() {
             break
         }
     }
+
+    ; 刷场次设置
+    g_Gui.Add("Text", "x40 y+10 w120", "最大场次(0=无限):")
+    editAMRuns := g_Gui.Add("Edit", "x+10 w50 vEditAutoMatchMaxRuns", g_AutoMatch_MaxRuns)
+    editAMRuns.OnEvent("Change", (*) => SaveSettings())
 
     ; 看门狗设置 (刷图停滞/游戏缺失检测)
     g_Gui.Add("Text", "x40 y+10 w120", "触发持续(秒):")
@@ -458,7 +485,7 @@ GetLogLevelIndex() {
 
 ; --- 保存设置 ---
 SaveSettings() {
-    global g_Gui, g_AntiAFK_HeartbeatInterval, g_AutoFarm_MaxRuns
+    global g_Gui, g_AntiAFK_HeartbeatInterval, g_AutoFarm_MaxRuns, g_AutoMatch_MaxRuns
     global g_FarmWatchdog_Duration
 
     saved := g_Gui.Submit(0)
@@ -493,6 +520,13 @@ SaveSettings() {
         ConfigManager.Write("FarmWatchdog", "Watch_Duration", saved.EditWatchDuration)
         g_FarmWatchdog_Duration := Integer(saved.EditWatchDuration)
     }
+
+    ; 保存刷场次 MaxRuns
+    if (saved.HasProp("EditAutoMatchMaxRuns") && saved.EditAutoMatchMaxRuns != "") {
+        ConfigManager.Write("AutoMatch", "MaxRuns", saved.EditAutoMatchMaxRuns)
+        global g_AutoMatch_MaxRuns
+        g_AutoMatch_MaxRuns := Integer(saved.EditAutoMatchMaxRuns)
+    }
 }
 
 ; 服务端配置切换回调
@@ -512,6 +546,7 @@ GuiTick() {
     global g_Gui, g_Ctrl_AutoFarm_RunCount, g_AutoFarm_RunCount
     global g_Ctrl_AutoFarmMulti_RunCount, g_AutoFarmMulti_RunCount
     global g_Ctrl_FarmWatchdog_RestartCount, g_FarmWatchdog_RestartCount
+    global g_Ctrl_AutoMatch_RunCount, g_AutoMatch_RunCount
 
     ; 更新游戏状态文本
     try {
@@ -532,6 +567,11 @@ GuiTick() {
         try g_Ctrl_FarmWatchdog_RestartCount.Text := "重启: " g_FarmWatchdog_RestartCount
     }
 
+    ; 更新刷场次计数
+    if (g_Ctrl_AutoMatch_RunCount) {
+        try g_Ctrl_AutoMatch_RunCount.Text := "场次: " g_AutoMatch_RunCount
+    }
+
     ; 调用各模块 Tick
     AntiAFK_Tick()
     AutoFarm_Tick()
@@ -540,6 +580,7 @@ GuiTick() {
     RestartGame_Tick()
     FarmWatchdog_Tick()
     AutoFarmMulti_Tick()
+    AutoMatch_Tick()
 
     UpdateGuiStatus()
 }
@@ -581,6 +622,11 @@ UpdateGuiStatus() {
         g_Ctrl_FarmWatchdog.Text := g_FarmWatchdog_Enabled ? "停止" : "启动"
         g_Ctrl_FarmWatchdog.Redraw()
     }
+    ; AutoMatch
+    if (g_Ctrl_AutoMatch) {
+        g_Ctrl_AutoMatch.Text := g_AutoMatch_Enabled ? "停止" : "启动"
+        g_Ctrl_AutoMatch.Redraw()
+    }
     ; 状态栏
     if (g_StatusBar) {
         parts := []
@@ -598,6 +644,8 @@ UpdateGuiStatus() {
             parts.Push("刷图多人:ON")
         if (g_FarmWatchdog_Enabled)
             parts.Push("看门狗:ON")
+        if (g_AutoMatch_Enabled)
+            parts.Push("刷场次:ON")
         if (parts.Length == 0)
             parts.Push("空闲")
         g_StatusBar.SetText(JoinArr(parts, " | "))
@@ -607,6 +655,7 @@ UpdateGuiStatus() {
         anyRunning := g_AntiAFK_Enabled || g_AutoFarm_Enabled || g_ComboMacros_Enabled
             || g_DailyRewards_Enabled || g_RestartGame_Enabled
             || g_AutoFarmMulti_Enabled || g_FarmWatchdog_Enabled
+            || g_AutoMatch_Enabled
         g_Ctrl_ServerProfile.Enabled := !anyRunning
     }
 }
@@ -678,6 +727,7 @@ SetupTray() {
     ; tray.Add("防掉线: " (g_AntiAFK_Enabled ? "停止" : "启动"), (*) => ToggleModule("AntiAFK"))
     tray.Add("自动刷图: " (g_AutoFarm_Enabled ? "停止" : "启动"), (*) => ToggleModule("AutoFarm"))
     tray.Add("重启建房: " (g_RestartGame_Enabled ? "停止" : "启动"), (*) => ToggleModule("RestartGame"))
+    tray.Add("刷场次: " (g_AutoMatch_Enabled ? "停止" : "启动"), (*) => ToggleModule("AutoMatch"))
     tray.Add()
     tray.Add("退出", (*) => ExitApp(0))
 }
@@ -692,6 +742,7 @@ CleanupAll() {
     RestartGame_Cleanup()
     FarmWatchdog_Cleanup()
     AutoFarmMulti_Cleanup()
+    AutoMatch_Cleanup()
     Logger.Flush()
 }
 
