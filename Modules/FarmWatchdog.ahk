@@ -40,7 +40,8 @@ FarmWatchdog_Tick() {
     global g_FarmWatchdog_NoGameCount, g_FarmWatchdog_LastRunCount, g_FarmWatchdog_StuckCount
     global g_FarmWatchdog_RestartCount
     global g_RestartGame_Enabled, g_AutoFarm_Enabled, g_AutoFarmMulti_Enabled
-    global g_AutoFarm_RunCount, g_AutoFarmMulti_RunCount
+    global g_AutoFarm_RunCount, g_AutoFarmMulti_RunCount, g_AutoMatch_RunCount
+    global g_AutoMatch_Enabled
 
     if (!g_FarmWatchdog_Enabled)
         return
@@ -64,14 +65,14 @@ FarmWatchdog_Tick() {
     g_FarmWatchdog_NoGameCount := 0
 
     ; --- 检测2: 局数停滞 (单人/多人任一在运行) ---
-    anyFarmRunning := g_AutoFarm_Enabled || g_AutoFarmMulti_Enabled
+    anyFarmRunning := g_AutoFarm_Enabled || g_AutoFarmMulti_Enabled || g_AutoMatch_Enabled
     if (!anyFarmRunning) {
         g_FarmWatchdog_StuckCount := 0
         g_FarmWatchdog_LastRunCount := -1
         return
     }
 
-    currentCount := g_AutoFarm_Enabled ? g_AutoFarm_RunCount : g_AutoFarmMulti_RunCount
+    currentCount := g_AutoFarm_Enabled ? g_AutoFarm_RunCount : g_AutoFarmMulti_Enabled ? g_AutoFarmMulti_RunCount : g_AutoMatch_RunCount
 
     if (g_FarmWatchdog_LastRunCount == -1) {
         g_FarmWatchdog_LastRunCount := currentCount

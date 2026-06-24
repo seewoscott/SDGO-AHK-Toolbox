@@ -4,16 +4,13 @@
 class GameUtils {
     static g_hWnd := 0
     static g_InputMode := "control"
-    static g_KeyDelayMin := 30
-    static g_KeyDelayMax := 80
     static g_WinW := 1024
     static g_WinH := 768
+    static s_LastActiveTick := 0  ; SmartSearch 激活缓存
 
     ; 初始化: 检测游戏窗口并设置输入模式
     static Init() {
         this.g_InputMode := ConfigManager.Read("Game", "InputMode", "control")
-        this.g_KeyDelayMin := ConfigManager.Read("Game", "KeyDelayMin", 30)
-        this.g_KeyDelayMax := ConfigManager.Read("Game", "KeyDelayMax", 80)
         this.g_WinW := ConfigManager.Read("Game", "WindowWidth", 1024)
         this.g_WinH := ConfigManager.Read("Game", "WindowHeight", 768)
         this.RefreshWindow()
@@ -66,11 +63,9 @@ class GameUtils {
     }
 
     ; 发送单个按键到游戏 (后台安全方式)
-    static SendGameKey(key, delay := "") {
+    static SendGameKey(key, delay := 0) {
         if (!this.IsGameRunning())
             return false
-        if (delay == "")
-            delay := Random(this.g_KeyDelayMin, this.g_KeyDelayMax)
         if (this.g_InputMode == "control")
             ControlSend(key, , "ahk_exe " ConfigManager.GameExe)
         else {
@@ -83,7 +78,7 @@ class GameUtils {
     }
 
     ; 发送一次按键 (按下+释放)
-    static SendGameKeyOnce(key, delay := "") {
+    static SendGameKeyOnce(key, delay := 0) {
         return this.SendGameKey("{" key "}", delay)
     }
 
@@ -130,6 +125,36 @@ class GameUtils {
         result := ImageSearch(&ix, &iy, x1, y1, x2, y2, "*" variation " " imagePath)
         if (result)
             return {x: ix, y: iy}
+        return false
+    }
+
+    ; 智能图像搜索 — 优先搜索上次命中位置附近(±cacheSize), 减少全区域搜索量
+    ; cacheObj 需包含 {LastX, LastY, MissCount} 三个字段, 由调用者声明维护
+    ; 前 2 次未命中搜索 ±cacheSize 近邻区域, 超过后回退全区域搜索
+    static SmartSearch(&outX, &outY, imagePath, x1, y1, x2, y2, cacheObj, cacheSize := 60) {
+        ; Tick级激活缓存: 同Tick内已激活过则跳过 (ImageSearch需要窗口在前景渲染)
+        if (A_TickCount != this.s_LastActiveTick || !WinActive("ahk_id " this.g_hWnd)) {
+            this.ActivateGame()
+            Sleep(50)
+            this.s_LastActiveTick := A_TickCount
+        }
+        if (cacheObj.LastX >= 0 && cacheObj.MissCount < 2) {
+            cx1 := Max(x1, cacheObj.LastX - cacheSize)
+            cy1 := Max(y1, cacheObj.LastY - cacheSize)
+            cx2 := Min(x2, cacheObj.LastX + cacheSize)
+            cy2 := Min(y2, cacheObj.LastY + cacheSize)
+            if (ImageSearch(&outX, &outY, cx1, cy1, cx2, cy2, imagePath)) {
+                cacheObj.LastX := outX, cacheObj.LastY := outY
+                cacheObj.MissCount := 0
+                return true
+            }
+            cacheObj.MissCount++
+        }
+        if (ImageSearch(&outX, &outY, x1, y1, x2, y2, imagePath)) {
+            cacheObj.LastX := outX, cacheObj.LastY := outY
+            cacheObj.MissCount := 0
+            return true
+        }
         return false
     }
 

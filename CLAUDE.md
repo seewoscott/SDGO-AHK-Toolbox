@@ -20,6 +20,7 @@ SDGO工具脚本.ahk (Hub)
   │
   ├── #Include → Modules/AutoFarm.ahk       (单人刷图, 当前启用)
   ├── #Include → Modules/AutoFarmMulti.ahk  (多人刷图, 当前启用)
+  ├── #Include → Modules/AutoMatch.ahk      (刷场次, 当前启用)
   ├── #Include → Modules/RestartGame.ahk    (重启建房, 当前启用)
   ├── #Include → Modules/FarmWatchdog.ahk   (刷图看门狗, 当前启用)
   │
@@ -88,9 +89,10 @@ SDGO工具脚本.ahk (Hub)
 | 节 | 关键选项 |
 |----|----------|
 | `[General]` | `HotkeyModifier` (默认 `^!`=Ctrl+Alt), `EmergencyStop` (Esc), `GameExe` (gonline.exe) |
-| `[Game]` | `InputMode` (control/setforeground), `KeyDelayMin`/`Max` (30~80ms), `WindowWidth`/`Height` |
+| `[Game]` | `InputMode` (control/setforeground), `WindowWidth`/`Height` |
 | `[RestartGame]` | `Mode` (once/loop), `MaxLoops` (0=无限), `GamePath`/`GameDir`, 导航坐标, 各阶段超时 |
 | `[AutoFarm]` | `MaxRuns` (0=无限刷图) |
+| `[AutoMatch]` | `MaxRuns` (0=无限), `Timeout_Load`/`Timeout_Combat`/`Timeout_Result` |
 | `[FarmWatchdog]` | `Watch_Duration` (停滞检测秒数, 默认 120) |
 | `[AntiAFK]` | `HeartbeatInterval` (秒), `DisconnectPattern`, `MaxReconnectAttempts` |
 | `[Logging]` | `LogLevel` (DEBUG/INFO/WARN/ERROR), `MaxLogFiles` (轮转保留数) |
@@ -105,6 +107,7 @@ SDGO工具脚本.ahk (Hub)
 | `Ctrl+Alt+F5` | 切换 RestartGame（重启建房） | 启用 |
 | `Ctrl+Alt+F6` | 切换 FarmWatchdog（看门狗） | 启用 |
 | `Ctrl+Alt+F7` | 切换 AutoFarmMulti（多人刷图） | 启用 |
+| `Ctrl+Alt+F8` | 切换 AutoMatch（刷场次） | 启用 |
 | `F12` | 坐标捕获 — 复制鼠标 Client 坐标+颜色到剪贴板和日志 | 启用 |
 | `Ctrl+Alt+R` | 重载脚本 | 启用 |
 | `Ctrl+Alt+Esc` | 紧急停止所有模块 | 启用 |
@@ -115,7 +118,8 @@ SDGO工具脚本.ahk (Hub)
 ## 模块依赖与协作
 
 - **FarmWatchdog** 和 **ScreenWatcher** 检测到异常时，调用 `ToggleModule("RestartGame")` 触发自动重启建房
-- **FarmWatchdog** 读取 `AutoFarm`/`AutoFarmMulti` 的 `RunCount` 做刷图停滞检测
+- **FarmWatchdog** 读取 `AutoFarm`/`AutoFarmMulti`/`AutoMatch` 的 `RunCount` 做刷图/场次停滞检测
+- **AutoMatch** 通过 `GameUtils.ResolveImagePath()` 4-tier 回退自动匹配服务端专属图像（`NewServer_` 前缀）
 - **AntiAFK** 与 **RestartGame** 互斥 — AntiAFK 重连期间设置 `g_AntiAFK_Reconnecting = true`，RestartGame 的 Tick 检查此标志后跳过本轮
 - 所有模块依赖 `GameUtils`（游戏交互）和 `Logger`（日志），`GameUtils` 依赖 `ConfigManager`（读取配置）
 
@@ -123,9 +127,12 @@ SDGO工具脚本.ahk (Hub)
 
 | 文件 | 使用模块 | 用途 | 容差 |
 |------|----------|------|------|
-| `start_btn.png` | AutoFarm, AutoFarmMulti | 检测开始按钮 | *90 |
-| `combat_ui.png` | AutoFarm, AutoFarmMulti | 检测战斗 UI 加载完成 | *90 |
-| `end.png` | AutoFarm, AutoFarmMulti | 检测战斗结束标志 | *90 |
+| `start_btn.png` | AutoFarm, AutoFarmMulti, AutoMatch | 检测开始按钮 | *90 |
+| `combat_ui.png` | AutoFarm, AutoFarmMulti, AutoMatch | 检测战斗 UI 加载完成 | *90 |
+| `end.png` | AutoFarm, AutoFarmMulti, AutoMatch | 检测战斗结束标志 | *90 |
+| `NewServer_start_btn.png` | AutoMatch | 新服开始按钮 (ServerProfile=NewServer 时自动匹配) | *90 |
+| `NewServer_combat_ui.png` | AutoMatch | 新服战斗 UI (ServerProfile=NewServer 时自动匹配) | *90 |
+| `NewServer_end.png` | AutoMatch | 新服结束标志 (ServerProfile=NewServer 时自动匹配) | *90 |
 | `lobby.png` | RestartGame, GameUtils | 验证已进入大厅 | *120 |
 | `create_room.png` | RestartGame | 验证创建房间界面 | *120 |
 | `in_room.png` | RestartGame | 验证已进入房间 | *120 |
