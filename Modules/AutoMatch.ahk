@@ -148,7 +148,7 @@ AutoMatch_Tick() {
         }
 
     case "WAIT_LOAD":
-        ; 搜全窗口: combat_ui.png
+        ; 搜右上区域: combat_ui.png (和 AutoFarm 一致)
         static s_LoggedLoadPath := false
         if (!s_LoggedLoadPath) {
             Logger.Debug("[刷场次] WAIT_LOAD 搜索路径: " GameUtils.ResolveImagePath(A_ScriptDir "\Data\Images\combat_ui.png"))
@@ -156,7 +156,7 @@ AutoMatch_Tick() {
         }
         if (GameUtils.SmartSearch(&fx, &fy,
             "*90 " GameUtils.ResolveImagePath(A_ScriptDir "\Data\Images\combat_ui.png"),
-            gx, gy, gx + gw, gy + gh,
+            gx + gw*3/4, gy, gx + gw, gy + gh/4,
             g_AutoMatch_SearchCache)) {
             Logger.Debug("[刷场次] 检测到战斗UI, 开始索敌")
             Sleep(800)
