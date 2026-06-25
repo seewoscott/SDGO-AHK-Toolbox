@@ -1,4 +1,4 @@
-; AutoFarm.ahk — 自动刷图模块 (AHK v2)
+﻿; AutoFarm.ahk — 自动刷图模块 (AHK v2)
 ; 状态机: 等开始 → 按F5 → 等加载 → 战斗输出 → 结算 → 循环
 
 global g_AutoFarm_Enabled := false

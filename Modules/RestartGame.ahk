@@ -1,4 +1,4 @@
-; RestartGame.ahk — 重启游戏 & 创建任务房间模块
+﻿; RestartGame.ahk — 重启游戏 & 创建任务房间模块
 ; 状态机: 杀进程 → 启动 → 等待稳定 → 登录 → 导航菜单 → 创建房间 → 等待(循环)
 
 global g_RestartGame_Enabled := false
@@ -89,8 +89,8 @@ RestartGame_Cleanup() {
 ; === 状态机核心 ===
 
 RestartGame_Tick() {
-    global g_RestartGame_Enabled, g_AntiAFK_Reconnecting
-    if (!g_RestartGame_Enabled || g_AntiAFK_Reconnecting)
+    global g_RestartGame_Enabled
+    if (!g_RestartGame_Enabled)
         return
     RestartGame_CheckTimeout()
     RestartGame_ProcessState()

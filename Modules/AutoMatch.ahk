@@ -1,4 +1,4 @@
-; AutoMatch.ahk — 新服刷场次模块 (AHK v2)
+﻿; AutoMatch.ahk — 新服刷场次模块 (AHK v2)
 ; 状态机: 等开始 → Ready检测 → 按F5 → 等加载 → 旋转索敌 → 锁敌攻击 → 结算 → 循环
 ; 使用 GameUtils.SmartSearch (共享) + GameUtils.SendGameKey (遵循输入模式)
 
