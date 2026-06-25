@@ -30,12 +30,12 @@ AutoMatch_Init() {
     g_AutoMatch_MaxRuns := ConfigManager.Read("AutoMatch", "MaxRuns", 0)
     g_AutoMatch_ReadyPixelX := ConfigManager.Read("AutoMatch", "ReadyPixelX", 683)
     g_AutoMatch_ReadyPixelY := ConfigManager.Read("AutoMatch", "ReadyPixelY", 493)
-    g_AutoMatch_ReadyPixelColor := ConfigManager.Read("AutoMatch", "ReadyPixelColor", 0x253230)
+    g_AutoMatch_ReadyPixelColor := ConfigManager.Read("AutoMatch", "ReadyPixelColor", 0xFFFFFF)
     g_AutoMatch_ReadyTimeout := ConfigManager.Read("AutoMatch", "ReadyTimeout", 15)
-    g_AutoMatch_SeekSteps := ConfigManager.Read("AutoMatch", "SeekSteps", 36)
+    g_AutoMatch_SeekSteps := ConfigManager.Read("AutoMatch", "SeekSteps", 18)
     g_AutoMatch_SeekMouseDelta := ConfigManager.Read("AutoMatch", "SeekMouseDelta", 50)
     g_AutoMatch_SeekMaxRounds := ConfigManager.Read("AutoMatch", "SeekMaxRounds", 4)
-    g_AutoMatch_LockColor := ConfigManager.Read("AutoMatch", "LockColor", 0x448E3A)
+    g_AutoMatch_LockColor := ConfigManager.Read("AutoMatch", "LockColor", 0x73B279)
     g_AutoMatch_AttackDuration := ConfigManager.Read("AutoMatch", "AttackDuration", 60)
     g_AutoMatch_ResultColor := ConfigManager.Read("AutoMatch", "ResultColor", 0x25B3D1)
 
@@ -45,7 +45,7 @@ AutoMatch_Init() {
 AutoMatch_Start() {
     global g_AutoMatch_Enabled, g_AutoMatch_RunCount, g_AutoMatch_State, g_AutoMatch_StateStart
     global g_AutoMatch_SearchCache, g_AutoMatch_CombatSub, g_AutoMatch_SeekStep, g_AutoMatch_SeekRounds
-    global g_AutoMatch_AttackStopped
+    global g_AutoMatch_AttackStopped, g_AutoMatch_CombatStart
     g_AutoMatch_Enabled := true
     g_AutoMatch_AttackStopped := false
     g_AutoMatch_RunCount := 0
@@ -110,37 +110,30 @@ AutoMatch_Tick() {
                 gx + gw/2, gy + gh/2, gx + gw, gy + gh,
                 g_AutoMatch_SearchCache))
                 return
-            Logger.Debug("[刷场次] 检测到开始按钮, 等待Ready(像素 " g_AutoMatch_ReadyPixelX "," g_AutoMatch_ReadyPixelY " ≠ 0x" Format("{:06X}", g_AutoMatch_ReadyPixelColor) ")")
-            s_StartBtnFound := true
-            s_ReadyWaitStart := A_TickCount
-        }
-
-        ; F5 Ready 检测: 等待特定像素颜色变化
-        GameUtils.ActivateGame()
-        Sleep(50)
-        readyColor := PixelGetColor(g_AutoMatch_ReadyPixelX, g_AutoMatch_ReadyPixelY)
-        if (readyColor != g_AutoMatch_ReadyPixelColor) {
-            Logger.Debug("[刷场次] Ready! (像素颜色=0x" Format("{:06X}", readyColor) "), 按F5")
+            Logger.Debug("[刷场次] 检测到开始按钮, 先按F5, 等待Ready(像素 " g_AutoMatch_ReadyPixelX "," g_AutoMatch_ReadyPixelY " ≠ 0x" Format("{:06X}", g_AutoMatch_ReadyPixelColor) ")")
             Sleep(300)
             GameUtils.ActivateGame()
             Sleep(200)
             SendInput("{F5 down}")
             Sleep(200)
             SendInput("{F5 up}")
+            s_StartBtnFound := true
+            s_ReadyWaitStart := A_TickCount
+        }
+
+        ; F5 Ready 检测: 等待特定像素颜色变化, 变化后进入 WAIT_LOAD
+        GameUtils.ActivateGame()
+        Sleep(50)
+        readyColor := PixelGetColor(g_AutoMatch_ReadyPixelX, g_AutoMatch_ReadyPixelY)
+        if (readyColor != g_AutoMatch_ReadyPixelColor) {
+            Logger.Debug("[刷场次] Ready! (像素颜色=0x" Format("{:06X}", readyColor) "), 进入加载")
             Sleep(2500)
             g_AutoMatch_State := "WAIT_LOAD"
             g_AutoMatch_StateStart := A_TickCount
             s_StartBtnFound := false
             s_ReadyWaitStart := 0
-        } else if (A_TickCount - s_ReadyWaitStart > g_AutoMatch_ReadyTimeout * 1000) {
-            Logger.Warn("[刷场次] Ready超时" g_AutoMatch_ReadyTimeout "s, 仍然按F5")
-            Sleep(300)
-            GameUtils.ActivateGame()
-            Sleep(200)
-            SendInput("{F5 down}")
-            Sleep(200)
-            SendInput("{F5 up}")
-            Sleep(2500)
+        } else if (A_TickCount - s_ReadyWaitStart > 10000) {
+            Logger.Warn("[刷场次] Ready超时10s, 仍然进入加载")
             g_AutoMatch_State := "WAIT_LOAD"
             g_AutoMatch_StateStart := A_TickCount
             s_StartBtnFound := false
@@ -148,7 +141,7 @@ AutoMatch_Tick() {
         }
 
     case "WAIT_LOAD":
-        ; 搜全窗口: combat_ui.png
+        ; 搜右上区域: combat_ui.png (和 AutoFarm 一致)
         static s_LoggedLoadPath := false
         if (!s_LoggedLoadPath) {
             Logger.Debug("[刷场次] WAIT_LOAD 搜索路径: " GameUtils.ResolveImagePath(A_ScriptDir "\Data\Images\combat_ui.png"))
@@ -156,7 +149,7 @@ AutoMatch_Tick() {
         }
         if (GameUtils.SmartSearch(&fx, &fy,
             "*90 " GameUtils.ResolveImagePath(A_ScriptDir "\Data\Images\combat_ui.png"),
-            gx, gy, gx + gw, gy + gh,
+            gx + gw*3/4, gy, gx + gw, gy + gh/4,
             g_AutoMatch_SearchCache)) {
             Logger.Debug("[刷场次] 检测到战斗UI, 开始索敌")
             Sleep(800)
@@ -170,9 +163,6 @@ AutoMatch_Tick() {
 
     case "COMBAT":
         ; === 战斗状态机 (子状态: SEEK / ADVANCE / ATTACK) ===
-        ; 战斗需要游戏在前景 (鼠标操作+PixelSearch)
-        GameUtils.ActivateGame()
-        Sleep(30)
 
         ; SEEK/ADVANCE 总兜底: 180s未锁到则强制结算
         if (g_AutoMatch_CombatSub != "ATTACK" && A_TickCount - g_AutoMatch_CombatStart > 180000) {
@@ -184,28 +174,34 @@ AutoMatch_Tick() {
         }
         switch g_AutoMatch_CombatSub {
         case "SEEK":
-            ; 旋转索敌: 鼠标右移旋转 + 右键索敌 + 扫九宫格中心区域
-            MouseMove(g_AutoMatch_SeekMouseDelta, 0, , "R")
-            Sleep(50)
-            SendInput("{RButton}")
-            Sleep(150)
-
-            ; 扫九宫格中心区域 (1/3 ~ 2/3) 检测锁定框颜色
-            cx1 := gw/3, cy1 := gh/3, cx2 := gw*2/3, cy2 := gh*2/3
+            ; 旋转索敌: 按住右键 + 鼠标右移拖动旋转视角
+            CoordMode("Mouse", "Screen")
+            SendInput("{RButton down}")
             Sleep(30)
-            locked := PixelSearch(&px, &py, cx1, cy1, cx2, cy2, g_AutoMatch_LockColor, 20)
+            MouseGetPos(&sx, &sy)
+            Loop 20 {
+                if (!g_AutoMatch_Enabled || !GameUtils.IsGameRunning())
+                    return
+                sx += 2
+                MouseMove(sx, sy, 0)
+                Sleep(100)
+            }
+            SendInput("{RButton up}")
+            Sleep(30)
 
-            if (locked) {
+            ; 旋转结束后搜一次九宫格中心的锁定框颜色
+            cx1 := gw/3, cy1 := gh/3, cx2 := gw*2/3, cy2 := gh*2/3
+            if (PixelSearch(&px, &py, cx1, cy1, cx2, cy2, g_AutoMatch_LockColor, 15)) {
                 Logger.Debug("[刷场次] 锁定敌机! (颜色 0x" Format("{:06X}", g_AutoMatch_LockColor) " 命中 @" px "," py ")")
-                ; 按住右键锁敌
                 SendInput("{RButton down}")
                 Sleep(50)
                 g_AutoMatch_CombatSub := "ATTACK"
-                g_AutoMatch_CombatStart := A_TickCount  ; 重置攻击阶段计时
-                g_AutoMatch_StateStart := A_TickCount  ; 重置计时器用於攻击阶段
+                g_AutoMatch_CombatStart := A_TickCount
+                g_AutoMatch_StateStart := A_TickCount
                 return
             }
 
+            ; 每 tick 计数, 满一圈进 ADVANCE
             g_AutoMatch_SeekStep++
             if (g_AutoMatch_SeekStep >= g_AutoMatch_SeekSteps) {
                 Logger.Debug("[刷场次] 旋转满一圈(" g_AutoMatch_SeekSteps "步), 未锁到")
@@ -277,15 +273,6 @@ AutoMatch_Tick() {
     case "RESULT":
         Logger.Debug("[刷场次] 结算清理...")
         Sleep(1500)
-        GameUtils.ActivateGame()
-        Loop 15 {
-            if (!g_AutoMatch_Enabled || !GameUtils.IsGameRunning())
-                return
-            SendInput("{Enter down}")
-            Sleep(100)
-            SendInput("{Enter up}")
-            Sleep(400)
-        }
         g_AutoMatch_RunCount++
         Logger.Info("[刷场次] 第 " g_AutoMatch_RunCount " 场完成, 返回大厅")
         ; MaxRuns 检查: 达到上限自动停止
