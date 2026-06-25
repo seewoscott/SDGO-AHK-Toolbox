@@ -20,6 +20,7 @@ class ConfigManager {
     static LoginChannelColor := "0x071940"
     static RoomName := "炸狗房，新手来~"
     static LogDir := ""
+    static SupportedModules := ""
 
     ; ===== 多服配置支持 =====
 
@@ -49,6 +50,12 @@ class ConfigManager {
         this.LoginChannelColor := this.ReadServer("LoginChannelColor", "0x071940")
         this.RoomName := this.ReadServer("RoomName", "炸狗房，新手来~")
         this.LogDir := this.ReadServer("LogDir", "")
+        this.SupportedModules := this.ReadServer("Modules", "")
+    }
+
+    ; 检查当前服是否支持指定模块
+    static IsModuleSupported(moduleName) {
+        return InStr("," this.SupportedModules ",", "," moduleName ",") > 0
     }
 
     ; 枚举所有 [Server.*] 节, 返回 DisplayName 列表 (用于 GUI 下拉框)

@@ -55,7 +55,7 @@ SDGO工具脚本.ahk (Hub)
 | `ModuleName_Cleanup()` | 退出时清理资源 |
 
 
-**模块可见性**: AutoFarm、AutoFarmMulti、RestartGame、FarmWatchdog 仅在旧服（OC亚服/SDGO_UNION）下显示 GUI 控件；新服（OC梦服）下自动隐藏，热键也会拒绝启动并提示"仅支持旧服"。AutoMatch 两服通用。
+**模块可见性**: 每个 `[Server.*]` 节通过 `Modules=` 字段声明该服支持的模块（逗号分隔）。运行时自动显隐对应 GUI 控件，热键对不支持模块拒绝启动并提示。加新服只需在 INI 中列出模块名，不改源码。
 
 ## 游戏窗口交互 (GameUtils)
 
@@ -88,6 +88,7 @@ SDGO工具脚本.ahk (Hub)
 | `[AutoMatch]` | `MaxRuns` (0=无限), `Timeout_Load`/`Timeout_Combat`/`Timeout_Result` |
 | `[FarmWatchdog]` | `Watch_Duration` (停滞检测秒数, 默认 120) |
 | `[Login]` | 登录流程坐标 (`Login_PasswordX/Y`, `Login_ConfirmX/Y`, `Channel_*`) |
+| `[Server.*]` | `Modules` (逗号分隔的模块清单), `GameExe`, `LauncherExe`, `GameDir`, `GamePath`, `LoginPassword`, `LoginChannelColor`, `LogDir` |
 | `[Logging]` | `LogLevel` (DEBUG/INFO/WARN/ERROR), `MaxLogFiles` (轮转保留数) |
 
 ## 热键

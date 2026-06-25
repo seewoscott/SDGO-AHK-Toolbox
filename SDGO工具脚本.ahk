@@ -47,9 +47,9 @@ global g_Ctrl_AutoFarm_RunCount := 0
 global g_Ctrl_LogLevel := 0
 global g_Ctrl_ServerProfile := 0
 
-; 旧服模块控件组 (用于新服下隐藏)
-global g_LegacyControls := []
-global g_LegacySettingsControls := []
+; 模块控件映射 (key=模块名, value=控件数组, 用于按服显隐)
+global g_AllModuleControls := Map()
+global g_AllSettingsControls := Map()
 
 ; 全局控制热键修饰符
 global g_HotkeyMod := ""
@@ -162,21 +162,18 @@ CaptureCoords() {
     SetTimer(() => ToolTip(, , , 3), -4000)
 }
 
-; --- 服务端类型判断 ---
-IsLegacyServer() {
-    p := ConfigManager.ServerProfile
-    return p == "OC_ASIA" || p == "SDGO_UNION"
-}
-
-; 根据当前服务端更新旧服模块显隐
+; 根据当前服务端更新各模块控件显隐 (INI 驱动)
 UpdateModuleVisibility() {
-    global g_LegacyControls, g_LegacySettingsControls
-    visible := IsLegacyServer()
-    for ctrl in g_LegacyControls {
-        try ctrl.Visible := visible
+    global g_AllModuleControls, g_AllSettingsControls
+    for moduleName, controls in g_AllModuleControls {
+        visible := ConfigManager.IsModuleSupported(moduleName)
+        for ctrl in controls
+            try ctrl.Visible := visible
     }
-    for ctrl in g_LegacySettingsControls {
-        try ctrl.Visible := visible
+    for moduleName, controls in g_AllSettingsControls {
+        visible := ConfigManager.IsModuleSupported(moduleName)
+        for ctrl in controls
+            try ctrl.Visible := visible
     }
 }
 
@@ -184,8 +181,8 @@ UpdateModuleVisibility() {
 ToggleModule(module) {
     switch module {
     case "AutoFarm":
-        if (!IsLegacyServer()) {
-            ToolTip("AutoFarm 仅支持旧服(OC亚服)", , , 3)
+        if (!ConfigManager.IsModuleSupported("AutoFarm")) {
+            ToolTip("AutoFarm 不支持当前服", , , 3)
             SetTimer(() => ToolTip(, , , 3), -2000)
             return
         }
@@ -195,8 +192,8 @@ ToggleModule(module) {
             AutoFarm_Start()
         UpdateGuiStatus()
     case "RestartGame":
-        if (!IsLegacyServer()) {
-            ToolTip("RestartGame 仅支持旧服(OC亚服)", , , 3)
+        if (!ConfigManager.IsModuleSupported("RestartGame")) {
+            ToolTip("RestartGame 不支持当前服", , , 3)
             SetTimer(() => ToolTip(, , , 3), -2000)
             return
         }
@@ -206,8 +203,8 @@ ToggleModule(module) {
             RestartGame_Start()
         UpdateGuiStatus()
     case "FarmWatchdog":
-        if (!IsLegacyServer()) {
-            ToolTip("FarmWatchdog 仅支持旧服(OC亚服)", , , 3)
+        if (!ConfigManager.IsModuleSupported("FarmWatchdog")) {
+            ToolTip("FarmWatchdog 不支持当前服", , , 3)
             SetTimer(() => ToolTip(, , , 3), -2000)
             return
         }
@@ -217,8 +214,8 @@ ToggleModule(module) {
             FarmWatchdog_Start()
         UpdateGuiStatus()
     case "AutoFarmMulti":
-        if (!IsLegacyServer()) {
-            ToolTip("AutoFarmMulti 仅支持旧服(OC亚服)", , , 3)
+        if (!ConfigManager.IsModuleSupported("AutoFarmMulti")) {
+            ToolTip("AutoFarmMulti 不支持当前服", , , 3)
             SetTimer(() => ToolTip(, , , 3), -2000)
             return
         }
@@ -256,7 +253,7 @@ BuildGui() {
     global g_Ctrl_AutoFarmMulti, g_Ctrl_AutoFarmMulti_RunCount
     global g_Ctrl_FarmWatchdog, g_Ctrl_FarmWatchdog_RestartCount
     global g_Ctrl_AutoMatch, g_Ctrl_AutoMatch_RunCount, g_AutoMatch_MaxRuns
-    global g_LegacyControls, g_LegacySettingsControls
+    global g_AllModuleControls, g_AllSettingsControls
 
     g_Gui := Gui("+Resize +MinSize500x400 +MaximizeBox", APP_NAME " v" APP_VERSION " — " ConfigManager.ServerDisplayName)
     g_Gui.OnEvent("Close", GuiClose)
@@ -281,15 +278,15 @@ BuildGui() {
     g_Gui.Add("Text", "x20 y+10 w460 h30", "模块控制")
     g_Gui.SetFont("s9 norm")
 
-    ; 模块1: RestartGame (F5) — 仅旧服
+    ; 模块1: RestartGame (F5)
     gb3 := g_Gui.Add("GroupBox", "x20 y+10 w460 h70", "重启建房 (RestartGame)")
     desc3 := g_Gui.Add("Text", "xp+20 yp+25 w250", "重启游戏 → 登录 → 创建任务房间")
     btnRestart := g_Gui.Add("Button", "x380 yp-5 w80 h28 vBtnRestart", "启动")
     btnRestart.OnEvent("Click", (*) => ToggleModule("RestartGame"))
     g_Ctrl_RestartGame := btnRestart
-    g_LegacyControls.Push(gb3, desc3, btnRestart)
+    g_AllModuleControls["RestartGame"] := [gb3, desc3, btnRestart]
 
-    ; 模块2: FarmWatchdog (F6) — 仅旧服
+    ; 模块2: FarmWatchdog (F6)
     gb4 := g_Gui.Add("GroupBox", "x20 y+10 w460 h70", "看门狗 (FarmWatchdog)")
     desc4 := g_Gui.Add("Text", "xp+20 yp+25 w200", "刷图停滞/游戏缺失 → 触发重启建房")
     restartCountW := g_Gui.Add("Text", "x300 yp-5 w70 vTxtRestartCountW", "重启: 0")
@@ -297,9 +294,9 @@ BuildGui() {
     btnWatch := g_Gui.Add("Button", "x380 yp-5 w80 h28 vBtnWatch", "启动")
     btnWatch.OnEvent("Click", (*) => ToggleModule("FarmWatchdog"))
     g_Ctrl_FarmWatchdog := btnWatch
-    g_LegacyControls.Push(gb4, desc4, restartCountW, btnWatch)
+    g_AllModuleControls["FarmWatchdog"] := [gb4, desc4, restartCountW, btnWatch]
 
-    ; 模块3: AutoFarm (F7) — 仅旧服
+    ; 模块3: AutoFarm (F7)
     gb1 := g_Gui.Add("GroupBox", "x20 y+10 w460 h70", "自动刷图-单人 (AutoFarm)")
     desc1 := g_Gui.Add("Text", "xp+20 yp+25 w200", "检测开始→F5→战斗→结算→循环")
     runCount := g_Gui.Add("Text", "x300 yp-5 w70 vTxtRunCount", "局数: 0")
@@ -307,9 +304,9 @@ BuildGui() {
     btnAutoFarm := g_Gui.Add("Button", "x380 yp-5 w80 h28 vBtnAutoFarm", "启动")
     btnAutoFarm.OnEvent("Click", (*) => ToggleModule("AutoFarm"))
     g_Ctrl_AutoFarm := btnAutoFarm
-    g_LegacyControls.Push(gb1, desc1, runCount, btnAutoFarm)
+    g_AllModuleControls["AutoFarm"] := [gb1, desc1, runCount, btnAutoFarm]
 
-    ; 模块4: AutoFarmMulti (F8) — 仅旧服
+    ; 模块4: AutoFarmMulti (F8)
     gb2 := g_Gui.Add("GroupBox", "x20 y+10 w460 h70", "自动刷图-多人 (AutoFarmMulti)")
     desc2 := g_Gui.Add("Text", "xp+20 yp+25 w200", "检测开始→F5→战斗→结算→循环")
     runCountM := g_Gui.Add("Text", "x300 yp w70 vTxtRunCountM", "局数: 0")
@@ -317,18 +314,17 @@ BuildGui() {
     btnAutoFarmM := g_Gui.Add("Button", "x380 yp-5 w80 h28 vBtnAutoFarmM", "启动")
     btnAutoFarmM.OnEvent("Click", (*) => ToggleModule("AutoFarmMulti"))
     g_Ctrl_AutoFarmMulti := btnAutoFarmM
-    g_LegacyControls.Push(gb2, desc2, runCountM, btnAutoFarmM)
+    g_AllModuleControls["AutoFarmMulti"] := [gb2, desc2, runCountM, btnAutoFarmM]
 
     ; 模块5: AutoMatch (F9)
-    g_Gui.Add("GroupBox", "x20 y+10 w460 h70", "刷场次 (AutoMatch)")
-    g_Gui.Add("Text", "xp+20 yp+25 w200", "新服刷场次 — 检测开始→F5→战斗→结算")
+    gb5 := g_Gui.Add("GroupBox", "x20 y+10 w460 h70", "刷场次 (AutoMatch)")
+    desc5 := g_Gui.Add("Text", "xp+20 yp+25 w200", "新服刷场次 — 检测开始→F5→战斗→结算")
     runCountAM := g_Gui.Add("Text", "x300 yp w70 vTxtRunCountAM", "场次: 0")
     g_Ctrl_AutoMatch_RunCount := runCountAM
     btnAutoMatch := g_Gui.Add("Button", "x380 yp-5 w80 h28 vBtnAutoMatch", "启动")
     btnAutoMatch.OnEvent("Click", (*) => ToggleModule("AutoMatch"))
     g_Ctrl_AutoMatch := btnAutoMatch
-
-    ; 紧急停止按钮
+    g_AllModuleControls["AutoMatch"] := [gb5, desc5, runCountAM, btnAutoMatch]
     btnStop := g_Gui.Add("Button", "x20 y+20 w100 h35 vBtnStop", "紧急停止 (Esc)")
     btnStop.OnEvent("Click", (*) => EmergencyStop())
     btnStop.SetFont("s10 bold", "Segoe UI")
@@ -366,7 +362,7 @@ BuildGui() {
     wdText := g_Gui.Add("Text", "x40 y+10 w120", "触发看门狗持续(秒):")
     editWD := g_Gui.Add("Edit", "x+10 w50 vEditWatchDuration", g_FarmWatchdog_Duration)
     editWD.OnEvent("Change", (*) => SaveSettings())
-    g_LegacySettingsControls.Push(wdText, editWD)
+    g_AllSettingsControls["FarmWatchdog"] := [wdText, editWD]
 
     ; ===== 选项卡3: 日志 =====
     g_Tab.UseTab(3)
