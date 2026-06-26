@@ -1,4 +1,4 @@
-; GameUtils.ahk — 游戏窗口检测与输入注入工具
+﻿; GameUtils.ahk — 游戏窗口检测与输入注入工具
 ; SDGO UNION 1.4.3 (d3d9 窗口模式 1024x768)
 
 class GameUtils {
@@ -159,8 +159,8 @@ class GameUtils {
     }
 
     ; 4-tier 图像路径回退: 服务端+分辨率 → 服务端 → 全局+分辨率 → 全局
-    ;   Tier 1: Data\Images\<ServerProfile>_<name>_<WxH>.png
-    ;   Tier 2: Data\Images\<ServerProfile>_<name>.png
+    ;   Tier 1: Data\Images\<ServerDisplayName>_<name>_<WxH>.png
+    ;   Tier 2: Data\Images\<ServerDisplayName>_<name>.png
     ;   Tier 3: Data\Images\<name>_<WxH>.png
     ;   Tier 4: Data\Images\<name>.png (原始路径)
     static ResolveImagePath(baseName) {
@@ -168,14 +168,14 @@ class GameUtils {
         SplitPath(baseName, &name, &dir)
         nameNoExt := StrReplace(name, ".png", "")
 
-        if (ConfigManager.ServerProfile != "") {
-            tier1 := dir "\" ConfigManager.ServerProfile "_" nameNoExt "_" g_ResolutionProfile ".png"
+        if (ConfigManager.ServerDisplayName != "") {
+            tier1 := dir "\" ConfigManager.ServerDisplayName "_" nameNoExt "_" g_ResolutionProfile ".png"
             if (FileExist(tier1))
                 return tier1
         }
 
-        if (ConfigManager.ServerProfile != "") {
-            tier2 := dir "\" ConfigManager.ServerProfile "_" nameNoExt ".png"
+        if (ConfigManager.ServerDisplayName != "") {
+            tier2 := dir "\" ConfigManager.ServerDisplayName "_" nameNoExt ".png"
             if (FileExist(tier2))
                 return tier2
         }
@@ -221,7 +221,7 @@ class GameUtils {
         return false
     }
 
-    ; 执行标准登录流程 (提取自 AntiAFK 模块, 供多处复用)
+    ; 执行标准登录流程
     ; 使用 ControlSend 后台输入, 不要求窗口激活 (D3D9 游戏兼容)
     ; 返回 true/false
     static DoLogin() {
@@ -231,14 +231,14 @@ class GameUtils {
         if (!this.IsGameRunning())
             return false
 
-        passX := ConfigManager.ReadCoord("AntiAFK", "Login_PasswordX", 400)
-        passY := ConfigManager.ReadCoord("AntiAFK", "Login_PasswordY", 330)
-        confirmX := ConfigManager.ReadCoord("AntiAFK", "Login_ConfirmX", 512)
-        confirmY := ConfigManager.ReadCoord("AntiAFK", "Login_ConfirmY", 400)
-        chanTaskX := ConfigManager.ReadCoord("AntiAFK", "Channel_TaskMode_X", 512)
-        chanTaskY := ConfigManager.ReadCoord("AntiAFK", "Channel_TaskMode_Y", 400)
-        chanSelX := ConfigManager.ReadCoord("AntiAFK", "Channel_Select_X", 512)
-        chanSelY := ConfigManager.ReadCoord("AntiAFK", "Channel_Select_Y", 400)
+        passX := ConfigManager.ReadCoord("Login", "Login_PasswordX", 400)
+        passY := ConfigManager.ReadCoord("Login", "Login_PasswordY", 330)
+        confirmX := ConfigManager.ReadCoord("Login", "Login_ConfirmX", 512)
+        confirmY := ConfigManager.ReadCoord("Login", "Login_ConfirmY", 400)
+        chanTaskX := ConfigManager.ReadCoord("Login", "Channel_TaskMode_X", 512)
+        chanTaskY := ConfigManager.ReadCoord("Login", "Channel_TaskMode_Y", 400)
+        chanSelX := ConfigManager.ReadCoord("Login", "Channel_Select_X", 512)
+        chanSelY := ConfigManager.ReadCoord("Login", "Channel_Select_Y", 400)
 
         this.ActivateGame()
         Sleep(2000)
@@ -265,8 +265,8 @@ class GameUtils {
         ; 验证: 进入频道选择画面 (像素检测)
         Loop 3 {
             Sleep(8000)
-            chanDetectX := ConfigManager.ReadCoord("AntiAFK", "Channel_DetectPixel_X", 400)
-            chanDetectY := ConfigManager.ReadCoord("AntiAFK", "Channel_DetectPixel_Y", 350)
+            chanDetectX := ConfigManager.ReadCoord("Login", "Channel_DetectPixel_X", 400)
+            chanDetectY := ConfigManager.ReadCoord("Login", "Channel_DetectPixel_Y", 350)
             found := PixelSearch(&px, &py, chanDetectX-15, chanDetectY-15, chanDetectX+15, chanDetectY+15, ConfigManager.LoginChannelColor, 40)
             if (found) {
                 Logger.Debug("[登录] 检测: 频道选择画面 ✓")

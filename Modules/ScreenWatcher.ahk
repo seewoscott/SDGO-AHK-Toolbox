@@ -1,4 +1,4 @@
-; ScreenWatcher.ahk — 画面监控模块 (ImageSearch)
+﻿; ScreenWatcher.ahk — 画面监控模块 (ImageSearch)
 ; 搜索参考截图, 持续出现 N 秒后自动触发 RestartGame
 
 global g_ScreenWatcher_Enabled := false

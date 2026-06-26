@@ -1,12 +1,17 @@
-; ConfigManager.ahk — INI 配置文件读写
+﻿; ConfigManager.ahk — INI 配置文件读写
 ; 提供类型化读写和默认值
 ; 支持多服务端配置 (3-tier: [Server.<Profile>] → [General] → 默认值)
 
 class ConfigManager {
     static g_IniPath := A_ScriptDir "\Data\Settings.ini"
 
+    ; 中文显示名映射 (profile key → display name)
+    ; 注意: INI 文件的中文值会被 IniRead 乱码, 所以中文映射硬编码在此
+    static s_DisplayNames := {OC_ASIA: "OC亚服", OC_CHINA: "OC梦服"}
+
     ; 服务端动态属性 (由 LoadServerConfig() 设置)
-    static ServerProfile := "SDGO_UNION"
+    static ServerProfile := "OC_ASIA"
+    static ServerDisplayName := "OC亚服"
     static GameDir  := A_Desktop "\SDGO UNION 1.4.3"
     static GamePath := A_Desktop "\SDGO UNION 1.4.3\SDGO_Launcher.exe"
     static GameExe  := "gonline.exe"
@@ -15,6 +20,7 @@ class ConfigManager {
     static LoginChannelColor := "0x071940"
     static RoomName := "炸狗房，新手来~"
     static LogDir := ""
+    static SupportedModules := ""
 
     ; ===== 多服配置支持 =====
 
@@ -33,7 +39,9 @@ class ConfigManager {
 
     ; 从当前服务端配置加载所有动态属性
     static LoadServerConfig() {
-        this.ServerProfile := this.Read("Game", "ServerProfile", "SDGO_UNION")
+        this.ServerProfile := this.Read("Game", "ServerProfile", "OC_ASIA")
+        this.ServerDisplayName := this.s_DisplayNames.HasProp(this.ServerProfile)
+            ? this.s_DisplayNames.%this.ServerProfile% : this.ServerProfile
         this.GameExe := this.ReadServer("GameExe", "gonline.exe")
         this.LauncherExe := this.ReadServer("LauncherExe", "SDGO_Launcher.exe")
         this.GameDir := this.ReadServer("GameDir", A_Desktop "\SDGO UNION 1.4.3")
@@ -42,19 +50,37 @@ class ConfigManager {
         this.LoginChannelColor := this.ReadServer("LoginChannelColor", "0x071940")
         this.RoomName := this.ReadServer("RoomName", "炸狗房，新手来~")
         this.LogDir := this.ReadServer("LogDir", "")
+        this.SupportedModules := this.ReadServer("Modules", "")
     }
 
-    ; 枚举所有 [Server.*] 节名
+    ; 检查当前服是否支持指定模块
+    static IsModuleSupported(moduleName) {
+        return InStr("," this.SupportedModules ",", "," moduleName ",") > 0
+    }
+
+    ; 枚举所有 [Server.*] 节, 返回 DisplayName 列表 (用于 GUI 下拉框)
     static GetServerProfiles() {
         profiles := []
         if (!FileExist(this.g_IniPath))
             return profiles
         sections := IniRead(this.g_IniPath)
         for section in StrSplit(sections, "`n", "`r") {
-            if (InStr(section, "Server.") == 1)
-                profiles.Push(SubStr(section, 8))
+            if (InStr(section, "Server.") == 1) {
+                key := SubStr(section, 8)
+                displayName := this.s_DisplayNames.HasProp(key) ? this.s_DisplayNames.%key% : key
+                profiles.Push(displayName)
+            }
         }
         return profiles
+    }
+
+    ; 根据 DisplayName 反查 profile key (如 "OC梦服" → "OC_CHINA")
+    static GetProfileKey(displayName) {
+        for key, dn in this.s_DisplayNames.OwnProps() {
+            if (dn == displayName)
+                return key
+        }
+        return displayName
     }
 
     ; 读取整个 section 为一个简单 Object {key: value, ...}

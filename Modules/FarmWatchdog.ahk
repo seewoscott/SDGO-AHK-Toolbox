@@ -1,4 +1,4 @@
-; FarmWatchdog.ahk — 刷图看门狗模块
+﻿; FarmWatchdog.ahk — 刷图看门狗模块
 ; 监控局数停滞 + 游戏进程缺失, 触发重启建房
 
 global g_FarmWatchdog_Enabled := false

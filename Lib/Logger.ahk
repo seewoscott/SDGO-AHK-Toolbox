@@ -1,4 +1,4 @@
-; Logger.ahk — 带时间戳的日志输出
+﻿; Logger.ahk — 带时间戳的日志输出
 ; 日志级别: DEBUG < INFO < WARN < ERROR
 
 class Logger {

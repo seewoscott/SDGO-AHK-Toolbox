@@ -1,4 +1,4 @@
-; AutoFarmMulti.ahk — 自动刷图模块-多人模式 (AHK v2)
+﻿; AutoFarmMulti.ahk — 自动刷图模块-多人模式 (AHK v2)
 ; 状态机: 等开始 → 按F5 → 等加载 → 开场连击+等待 → 战斗输出 → 结算 → 循环
 
 global g_AutoFarmMulti_Enabled := false

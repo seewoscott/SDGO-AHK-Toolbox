@@ -1,4 +1,4 @@
-# CLAUDE.md
+﻿# CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -24,9 +24,6 @@ SDGO工具脚本.ahk (Hub)
   ├── #Include → Modules/RestartGame.ahk    (重启建房, 当前启用)
   ├── #Include → Modules/FarmWatchdog.ahk   (刷图看门狗, 当前启用)
   │
-  ├── (暂禁) Modules/AntiAFK.ahk       (防掉线 — 心跳+断线重登)
-  ├── (暂禁) Modules/ComboMacros.ahk   (连招宏录制/回放)
-  └── (暂禁) Modules/DailyRewards.ahk  (每日奖励领取)
   └── (独立) Modules/ScreenWatcher.ahk (异常画面监控, 未被主脚本 #Include)
 ```
 
@@ -58,11 +55,7 @@ SDGO工具脚本.ahk (Hub)
 | `ModuleName_Cleanup()` | 退出时清理资源 |
 
 
-**禁用模块**: 被注释 `#Include` 的模块，主脚本定义同名空桩函数（`ModuleName_Init() => 0` 等），确保编译通过且调用不报错。要启用一个模块：
-1. 取消主脚本中对应 `#Include` 的注释
-2. 删除主脚本中对应的空桩函数和全局变量定义
-3. 取消 GUI 中对应的 GroupBox/Button 注释
-4. 取消 `RegisterGlobalHotkeys()` 中对应的 Hotkey 注释
+**模块可见性**: 每个 `[Server.*]` 节通过 `Modules=` 字段声明该服支持的模块（逗号分隔）。运行时自动显隐对应 GUI 控件，热键对不支持模块拒绝启动并提示。加新服只需在 INI 中列出模块名，不改源码。
 
 ## 游戏窗口交互 (GameUtils)
 
@@ -94,33 +87,28 @@ SDGO工具脚本.ahk (Hub)
 | `[AutoFarm]` | `MaxRuns` (0=无限刷图) |
 | `[AutoMatch]` | `MaxRuns` (0=无限), `Timeout_Load`/`Timeout_Combat`/`Timeout_Result` |
 | `[FarmWatchdog]` | `Watch_Duration` (停滞检测秒数, 默认 120) |
-| `[AntiAFK]` | `HeartbeatInterval` (秒), `DisconnectPattern`, `MaxReconnectAttempts` |
+| `[Login]` | 登录流程坐标 (`Login_PasswordX/Y`, `Login_ConfirmX/Y`, `Channel_*`) |
+| `[Server.*]` | `Modules` (逗号分隔的模块清单), `GameExe`, `LauncherExe`, `GameDir`, `GamePath`, `LoginPassword`, `LoginChannelColor`, `LogDir` |
 | `[Logging]` | `LogLevel` (DEBUG/INFO/WARN/ERROR), `MaxLogFiles` (轮转保留数) |
-| `[ComboMacros]` | `Macro1_Sequence`~`Macro8_Sequence` (JSON 格式按键序列) |
-| `[DailyRewards]` | `DetectionMode` (pixel/image), `ButtonColor`, `ButtonArea` |
 
 ## 热键
 
 | 热键 | 功能 | 状态 |
 |------|------|------|
-| `Ctrl+Alt+F2` | 切换 AutoFarm（单人刷图） | 启用 |
-| `Ctrl+Alt+F5` | 切换 RestartGame（重启建房） | 启用 |
-| `Ctrl+Alt+F6` | 切换 FarmWatchdog（看门狗） | 启用 |
-| `Ctrl+Alt+F7` | 切换 AutoFarmMulti（多人刷图） | 启用 |
-| `Ctrl+Alt+F8` | 切换 AutoMatch（刷场次） | 启用 |
+| `F5` | 切换 RestartGame（重启建房） | 启用 |
+| `F6` | 切换 FarmWatchdog（看门狗） | 启用 |
+| `F7` | 切换 AutoFarm（单人刷图） | 启用 |
+| `F8` | 切换 AutoFarmMulti（多人刷图） | 启用 |
+| `F9` | 切换 AutoMatch（刷场次） | 启用 |
 | `F12` | 坐标捕获 — 复制鼠标 Client 坐标+颜色到剪贴板和日志 | 启用 |
 | `Ctrl+Alt+R` | 重载脚本 | 启用 |
 | `Ctrl+Alt+Esc` | 紧急停止所有模块 | 启用 |
-| `Ctrl+Alt+F1` | 切换 AntiAFK | 暂禁 |
-| `Ctrl+Alt+F3` | 切换 ComboMacros | 暂禁 |
-| `Ctrl+Alt+F4` | 切换 DailyRewards | 暂禁 |
 
 ## 模块依赖与协作
 
 - **FarmWatchdog** 和 **ScreenWatcher** 检测到异常时，调用 `ToggleModule("RestartGame")` 触发自动重启建房
 - **FarmWatchdog** 读取 `AutoFarm`/`AutoFarmMulti`/`AutoMatch` 的 `RunCount` 做刷图/场次停滞检测
-- **AutoMatch** 通过 `GameUtils.ResolveImagePath()` 4-tier 回退自动匹配服务端专属图像（`NewServer_` 前缀）
-- **AntiAFK** 与 **RestartGame** 互斥 — AntiAFK 重连期间设置 `g_AntiAFK_Reconnecting = true`，RestartGame 的 Tick 检查此标志后跳过本轮
+- **AutoMatch** 通过 `GameUtils.ResolveImagePath()` 4-tier 回退自动匹配服务端专属图像（`OC梦服_` 前缀）
 - 所有模块依赖 `GameUtils`（游戏交互）和 `Logger`（日志），`GameUtils` 依赖 `ConfigManager`（读取配置）
 
 ## 图像模板 (Data/Images)
@@ -130,16 +118,15 @@ SDGO工具脚本.ahk (Hub)
 | `start_btn.png` | AutoFarm, AutoFarmMulti, AutoMatch | 检测开始按钮 | *90 |
 | `combat_ui.png` | AutoFarm, AutoFarmMulti, AutoMatch | 检测战斗 UI 加载完成 | *90 |
 | `end.png` | AutoFarm, AutoFarmMulti, AutoMatch | 检测战斗结束标志 | *90 |
-| `NewServer_start_btn.png` | AutoMatch | 新服开始按钮 (ServerProfile=NewServer 时自动匹配) | *90 |
-| `NewServer_combat_ui.png` | AutoMatch | 新服战斗 UI (ServerProfile=NewServer 时自动匹配) | *90 |
-| `NewServer_end.png` | AutoMatch | 新服结束标志 (ServerProfile=NewServer 时自动匹配) | *90 |
+| `OC梦服_start_btn.png` | AutoMatch | 新服开始按钮 (ServerProfile=OC梦服 时自动匹配) | *90 |
+| `OC梦服_combat_ui.png` | AutoMatch | 新服战斗 UI (ServerProfile=OC梦服 时自动匹配) | *90 |
+| `OC梦服_end.png` | AutoMatch | 新服结束标志 (ServerProfile=OC梦服 时自动匹配) | *90 |
 | `lobby.png` | RestartGame, GameUtils | 验证已进入大厅 | *120 |
 | `create_room.png` | RestartGame | 验证创建房间界面 | *120 |
 | `in_room.png` | RestartGame | 验证已进入房间 | *120 |
 | `channel_list.png` | GameUtils | 验证频道列表界面 | *120 |
 | `channel_select.png` | GameUtils | 频道选择画面参考 | — |
 | `watch.png` | ScreenWatcher | 异常画面监控 | *120 |
-| `reward_button.png` | DailyRewards | 领取奖励按钮 | *30 |
 
 ## 调试与故障排查
 
