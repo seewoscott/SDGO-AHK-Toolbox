@@ -9,7 +9,7 @@
 
 ; --- 常量定义 ---
 global APP_NAME := "SDGO工具脚本"
-global APP_VERSION := "1.5"
+global APP_VERSION := "1.5.2"
 global SCRIPT_DIR := A_ScriptDir
 global g_DesktopW := 0
 global g_DesktopH := 0
@@ -125,15 +125,15 @@ Init() {
 RegisterGlobalHotkeys() {
     mod := g_HotkeyMod  ; 默认 ^! (Ctrl+Alt)
 
-    ; F5~F9: 模块开关
-    Hotkey("F5", (*) => ToggleModule("RestartGame"), "On")
-    Hotkey("F6", (*) => ToggleModule("FarmWatchdog"), "On")
-    Hotkey("F7", (*) => ToggleModule("AutoFarm"), "On")
-    Hotkey("F8", (*) => ToggleModule("AutoFarmMulti"), "On")
-    Hotkey("F9", (*) => ToggleModule("AutoMatch"), "On")
+    ; F5~F9: 模块开关 ($前缀 = 仅物理按键, SendInput模拟的不会触发)
+    Hotkey("$F5", (*) => ToggleModule("RestartGame"), "On")
+    Hotkey("$F6", (*) => ToggleModule("FarmWatchdog"), "On")
+    Hotkey("$F7", (*) => ToggleModule("AutoFarm"), "On")
+    Hotkey("$F8", (*) => ToggleModule("AutoFarmMulti"), "On")
+    Hotkey("$F9", (*) => ToggleModule("AutoMatch"), "On")
 
     ; F12: 坐标捕获
-    Hotkey("F12", (*) => CaptureCoords(), "On")
+    Hotkey("$F12", (*) => CaptureCoords(), "On")
 
     ; Ctrl+Alt+R: 重载脚本
     Hotkey(mod "R", (*) => Reload(), "On")
