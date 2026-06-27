@@ -139,8 +139,14 @@ AutoMatch_Tick() {
             if (!GameUtils.SmartSearch(&fx, &fy,
                 "*90 " GameUtils.ResolveImagePath(A_ScriptDir "\Data\Images\start_btn.png"),
                 gx + gw/2, gy + gh/2, gx + gw, gy + gh,
-                g_AutoMatch_SearchCache))
+                g_AutoMatch_SearchCache)) {
+                static s_StartBtnMissTicks := 0
+                s_StartBtnMissTicks++
+                if (s_StartBtnMissTicks == 10)
+                    Logger.Warn("[刷场次] start_btn 持续10s未搜到, 请确认已在房间内")
                 return
+            }
+            s_StartBtnMissTicks := 0
 
             ; === Step 2: 先检测 member.png 判定角色, 再按 F5 ===
             memberPath := GameUtils.ResolveImagePath(A_ScriptDir "\Data\Images\member.png")
