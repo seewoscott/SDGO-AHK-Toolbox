@@ -19,6 +19,13 @@ global g_AutoMatch_ReadyPixelX, g_AutoMatch_ReadyPixelY, g_AutoMatch_ReadyPixelC
 global g_AutoMatch_ReadyTimeout, g_AutoMatch_SeekSteps, g_AutoMatch_SeekMouseDelta
 global g_AutoMatch_SeekMaxRounds, g_AutoMatch_LockColor, g_AutoMatch_AttackDuration
 global g_AutoMatch_ResultColor, g_AutoMatch_AttackStopped := false
+; WAIT_START 角色判定状态（全局，确保停止/重启后重置）
+global g_AutoMatch_StartBtnFound := false
+global g_AutoMatch_ReadyWaitStart := 0
+global g_AutoMatch_Role := "unknown"       ; "unknown" | "member" | "host"
+global g_AutoMatch_HostLastRetry := 0
+global g_AutoMatch_F5Retries := 0          ; F5 重试计数
+global g_AutoMatch_MemberEverSeen := false  ; member.png 是否曾被搜到过
 
 AutoMatch_Init() {
     global g_AutoMatch_MaxRuns
@@ -46,6 +53,7 @@ AutoMatch_Start() {
     global g_AutoMatch_Enabled, g_AutoMatch_RunCount, g_AutoMatch_State, g_AutoMatch_StateStart
     global g_AutoMatch_SearchCache, g_AutoMatch_CombatSub, g_AutoMatch_SeekStep, g_AutoMatch_SeekRounds
     global g_AutoMatch_AttackStopped, g_AutoMatch_CombatStart
+    global g_AutoMatch_StartBtnFound, g_AutoMatch_ReadyWaitStart, g_AutoMatch_Role, g_AutoMatch_HostLastRetry
     g_AutoMatch_Enabled := true
     g_AutoMatch_AttackStopped := false
     g_AutoMatch_RunCount := 0
@@ -56,6 +64,12 @@ AutoMatch_Start() {
     g_AutoMatch_SeekRounds := 0
     g_AutoMatch_SearchCache.LastX := -1, g_AutoMatch_SearchCache.LastY := -1
     g_AutoMatch_SearchCache.MissCount := 0
+    g_AutoMatch_StartBtnFound := false
+    g_AutoMatch_ReadyWaitStart := 0
+    g_AutoMatch_Role := "unknown"
+    g_AutoMatch_HostLastRetry := 0
+    g_AutoMatch_F5Retries := 0
+    g_AutoMatch_MemberEverSeen := false
     Logger.Info("AutoMatch: 已启动 | MaxRuns=" g_AutoMatch_MaxRuns)
     return true
 }
@@ -84,63 +98,163 @@ AutoMatch_Tick() {
     static s_PrevState := ""
     static s_PrevCombatSub := ""
 
-    if (!g_AutoMatch_Enabled || !GameUtils.IsGameRunning())
+    if (!g_AutoMatch_Enabled)
         return
+    if (!GameUtils.IsGameRunning()) {
+        static s_GameMissingWarned := false
+        if (!s_GameMissingWarned) {
+            Logger.Warn("[刷场次] 游戏进程未检测到, 等待中...")
+            s_GameMissingWarned := true
+        }
+        return
+    }
+    s_GameMissingWarned := false
 
     rect := GameUtils.GetWindowRect()
-    if (!rect)
+    if (!rect) {
+        static s_WindowMissingWarned := false
+        if (!s_WindowMissingWarned) {
+            Logger.Warn("[刷场次] 游戏窗口未获取到, 等待中...")
+            s_WindowMissingWarned := true
+        }
         return
+    }
+    s_WindowMissingWarned := false
     gx := rect.x, gy := rect.y, gw := rect.w, gh := rect.h
 
     switch g_AutoMatch_State {
     case "WAIT_START":
-        ; 搜右下区域: start_btn.png
+        ; 搜右下区域: start_btn.png, 搜到后先检测 member 图标再按 F5
+        global g_AutoMatch_StartBtnFound, g_AutoMatch_ReadyWaitStart, g_AutoMatch_Role, g_AutoMatch_HostLastRetry
+        global g_AutoMatch_F5Retries, g_AutoMatch_MemberEverSeen
         static s_LoggedStartPath := false
-        static s_ReadyWaitStart := 0
-        static s_StartBtnFound := false
 
         if (!s_LoggedStartPath) {
             Logger.Debug("[刷场次] WAIT_START 搜索路径: " GameUtils.ResolveImagePath(A_ScriptDir "\Data\Images\start_btn.png"))
             s_LoggedStartPath := true
         }
 
-        if (!s_StartBtnFound) {
+        ; === Step 1: 搜 start_btn.png ===
+        if (!g_AutoMatch_StartBtnFound) {
             if (!GameUtils.SmartSearch(&fx, &fy,
                 "*90 " GameUtils.ResolveImagePath(A_ScriptDir "\Data\Images\start_btn.png"),
                 gx + gw/2, gy + gh/2, gx + gw, gy + gh,
                 g_AutoMatch_SearchCache))
                 return
-            Logger.Debug("[刷场次] 检测到开始按钮, 先按F5, 等待Ready(像素 " g_AutoMatch_ReadyPixelX "," g_AutoMatch_ReadyPixelY " ≠ 0x" Format("{:06X}", g_AutoMatch_ReadyPixelColor) ")")
+
+            ; === Step 2: 先检测 member.png 判定角色, 再按 F5 ===
+            memberPath := GameUtils.ResolveImagePath(A_ScriptDir "\Data\Images\member.png")
+            if (ImageSearch(&mx, &my,
+                gx + g_AutoMatch_ReadyPixelX - 50, gy + g_AutoMatch_ReadyPixelY - 50,
+                gx + g_AutoMatch_ReadyPixelX + 50, gy + g_AutoMatch_ReadyPixelY + 50,
+                "*120 " memberPath)) {
+                g_AutoMatch_MemberEverSeen := true
+                Logger.Debug("[刷场次] 检测到 member 图标, 判定为成员, 按F5就绪")
+            } else {
+                Logger.Debug("[刷场次] 未检测到 member 图标, 暂不确定角色, 先按F5")
+            }
+
             Sleep(300)
             GameUtils.ActivateGame()
             Sleep(200)
             SendInput("{F5 down}")
             Sleep(200)
             SendInput("{F5 up}")
-            s_StartBtnFound := true
-            s_ReadyWaitStart := A_TickCount
+            g_AutoMatch_StartBtnFound := true
+            g_AutoMatch_ReadyWaitStart := A_TickCount
+            g_AutoMatch_Role := "unknown"
+            g_AutoMatch_HostLastRetry := 0
         }
 
-        ; F5 Ready 检测: 等待特定像素颜色变化, 变化后进入 WAIT_LOAD
-        GameUtils.ActivateGame()
-        Sleep(50)
-        readyColor := PixelGetColor(g_AutoMatch_ReadyPixelX, g_AutoMatch_ReadyPixelY)
-        if (readyColor != g_AutoMatch_ReadyPixelColor) {
-            Logger.Debug("[刷场次] Ready! (像素颜色=0x" Format("{:06X}", readyColor) "), 进入加载")
+        ; === Step 3: 持续搜 member.png, 直到就绪消失或判定为房主 ===
+        ; member.png 只存在于成员身上, 就绪后会消失; 房主从来没有此图标
+        memberPath := GameUtils.ResolveImagePath(A_ScriptDir "\Data\Images\member.png")
+        memberFound := ImageSearch(&mx, &my,
+            gx + g_AutoMatch_ReadyPixelX - 50, gy + g_AutoMatch_ReadyPixelY - 50,
+            gx + g_AutoMatch_ReadyPixelX + 50, gy + g_AutoMatch_ReadyPixelY + 50,
+            "*120 " memberPath)
+
+        if (memberFound)
+            g_AutoMatch_MemberEverSeen := true
+
+        ; === 分支 A: 曾经搜到 member.png 且现在消失了 → 成员已就绪 ===
+        if (g_AutoMatch_MemberEverSeen && !memberFound) {
+            Logger.Debug("[刷场次] member 就绪图标消失, 成员已就绪, 进入加载 @" mx "," my ")")
             Sleep(2500)
             g_AutoMatch_State := "WAIT_LOAD"
             g_AutoMatch_StateStart := A_TickCount
-            s_StartBtnFound := false
-            s_ReadyWaitStart := 0
-        } else if (A_TickCount - s_ReadyWaitStart > g_AutoMatch_ReadyTimeout * 1000) {
-            Logger.Warn("[刷场次] Ready超时" g_AutoMatch_ReadyTimeout "s, 重新按F5")
+            g_AutoMatch_StartBtnFound := false
+            g_AutoMatch_ReadyWaitStart := 0
+            g_AutoMatch_Role := "unknown"
+            g_AutoMatch_HostLastRetry := 0
+            g_AutoMatch_F5Retries := 0
+            g_AutoMatch_MemberEverSeen := false
+            ; 重置搜索缓存 — start_btn(右下) → combat_ui(右上), 避免缓存坐标跨区
+            g_AutoMatch_SearchCache.LastX := -1, g_AutoMatch_SearchCache.LastY := -1
+            g_AutoMatch_SearchCache.MissCount := 0
+            return
+        }
+
+        ; === 分支 B: 从未搜到 member.png + 5s 超时 → 判为房主（仅一次）===
+        if (!g_AutoMatch_MemberEverSeen && g_AutoMatch_Role != "host"
+            && A_TickCount - g_AutoMatch_ReadyWaitStart > g_AutoMatch_ReadyTimeout * 1000) {
+            g_AutoMatch_Role := "host"
+            Logger.Info("[刷场次] member 就绪图标 " g_AutoMatch_ReadyTimeout "秒从未出现, 判定为房主")
+            g_AutoMatch_HostLastRetry := 0
+            ; 重置搜索缓存 — start_btn(右下) → combat_ui(右上), 避免缓存坐标跨区
+            g_AutoMatch_SearchCache.LastX := -1, g_AutoMatch_SearchCache.LastY := -1
+            g_AutoMatch_SearchCache.MissCount := 0
+        }
+
+        ; === 分支 C: member.png 还在 + 5s 超时 → 成员未就绪, F5 重试 ===
+        if (g_AutoMatch_MemberEverSeen && memberFound
+            && A_TickCount - g_AutoMatch_ReadyWaitStart > g_AutoMatch_ReadyTimeout * 1000) {
+            g_AutoMatch_F5Retries++
+            Logger.Warn("[刷场次] member 就绪图标 " g_AutoMatch_ReadyTimeout "秒未消失, 重新按F5 (第" g_AutoMatch_F5Retries "次重试)")
             Sleep(300)
             GameUtils.ActivateGame()
             Sleep(200)
             SendInput("{F5 down}")
             Sleep(200)
             SendInput("{F5 up}")
-            s_ReadyWaitStart := A_TickCount
+            g_AutoMatch_ReadyWaitStart := A_TickCount
+        }
+
+        ; === 房主路径: Enter+F5 重试 + 搜 combat_ui ===
+        if (g_AutoMatch_Role == "host") {
+            ; 每 5s 按一次 Enter+F5 尝试开始游戏
+            if (A_TickCount - g_AutoMatch_HostLastRetry > g_AutoMatch_ReadyTimeout * 1000) {
+                Logger.Debug("[刷场次] 房主按 Enter+F5 尝试开始游戏")
+                SendInput("{Enter down}")
+                Sleep(100)
+                SendInput("{F5 down}")
+                Sleep(200)
+                SendInput("{F5 up}")
+                Sleep(100)
+                SendInput("{Enter up}")
+                g_AutoMatch_HostLastRetry := A_TickCount
+            }
+            ; 搜右上区域: combat_ui.png
+            if (GameUtils.SmartSearch(&fx, &fy,
+                "*90 " GameUtils.ResolveImagePath(A_ScriptDir "\Data\Images\combat_ui.png"),
+                gx + gw*3/4, gy, gx + gw, gy + gh/4,
+                g_AutoMatch_SearchCache)) {
+                Logger.Debug("[刷场次] 检测到战斗UI, 房主进入加载")
+                Sleep(800)
+                g_AutoMatch_State := "COMBAT"
+                g_AutoMatch_CombatSub := "SEEK"
+                g_AutoMatch_SeekStep := 0
+                g_AutoMatch_SeekRounds := 0
+                g_AutoMatch_CombatStart := A_TickCount
+                g_AutoMatch_StateStart := A_TickCount
+                g_AutoMatch_StartBtnFound := false
+                g_AutoMatch_ReadyWaitStart := 0
+                g_AutoMatch_Role := "unknown"
+                g_AutoMatch_HostLastRetry := 0
+                ; 重置搜索缓存
+                g_AutoMatch_SearchCache.LastX := -1, g_AutoMatch_SearchCache.LastY := -1
+                g_AutoMatch_SearchCache.MissCount := 0
+            }
         }
 
     case "WAIT_LOAD":
@@ -239,7 +353,7 @@ AutoMatch_Tick() {
 
             ; 兜底检查: 120s超时 → 释放右键, 停止攻击, 继续搜结算色
             if (A_TickCount - g_AutoMatch_CombatStart > 60000 && !g_AutoMatch_AttackStopped) {
-                Logger.Warn("[刷场次] 战斗超时120s, 释放右键停止攻击, 继续等待结算")
+                Logger.Warn("[刷场次] 战斗超时60s, 释放右键停止攻击, 继续等待结算")
                 SendInput("{RButton up}")
                 g_AutoMatch_AttackStopped := true
             }
