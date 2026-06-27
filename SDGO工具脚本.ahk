@@ -9,7 +9,7 @@
 
 ; --- 常量定义 ---
 global APP_NAME := "SDGO工具脚本"
-global APP_VERSION := "1.5.2"
+global APP_VERSION := "1.5.5"
 global SCRIPT_DIR := A_ScriptDir
 global g_DesktopW := 0
 global g_DesktopH := 0
@@ -318,7 +318,7 @@ BuildGui() {
 
     ; 模块5: AutoMatch (F9)
     gb5 := g_Gui.Add("GroupBox", "x20 y+10 w460 h70", "刷场次 (AutoMatch)")
-    desc5 := g_Gui.Add("Text", "xp+20 yp+25 w200", "新服刷场次 — 检测开始→F5→战斗→结算")
+    desc5 := g_Gui.Add("Text", "xp+20 yp+25 w200", "自动识别房主/成员 → 战斗 → 结算 → 循环")
     runCountAM := g_Gui.Add("Text", "x300 yp w70 vTxtRunCountAM", "场次: 0")
     g_Ctrl_AutoMatch_RunCount := runCountAM
     btnAutoMatch := g_Gui.Add("Button", "x380 yp-5 w80 h28 vBtnAutoMatch", "启动")
