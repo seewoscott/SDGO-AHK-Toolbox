@@ -170,6 +170,7 @@ AutoMatch_Tick() {
             g_AutoMatch_ReadyWaitStart := A_TickCount
             g_AutoMatch_Role := "unknown"
             g_AutoMatch_HostLastRetry := 0
+            return   ; 本 Tick 已完成首次 F5, 下个 Tick 开始角色判定
         }
 
         ; === Step 3: 持续搜 member.png, 直到就绪消失或判定为房主 ===
