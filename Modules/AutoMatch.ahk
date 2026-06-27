@@ -54,6 +54,7 @@ AutoMatch_Start() {
     global g_AutoMatch_SearchCache, g_AutoMatch_CombatSub, g_AutoMatch_SeekStep, g_AutoMatch_SeekRounds
     global g_AutoMatch_AttackStopped, g_AutoMatch_CombatStart
     global g_AutoMatch_StartBtnFound, g_AutoMatch_ReadyWaitStart, g_AutoMatch_Role, g_AutoMatch_HostLastRetry
+    global g_AutoMatch_F5Retries, g_AutoMatch_MemberEverSeen
     g_AutoMatch_Enabled := true
     g_AutoMatch_AttackStopped := false
     g_AutoMatch_RunCount := 0
