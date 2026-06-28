@@ -35,9 +35,9 @@ AutoMatch_Init() {
     global g_AutoMatch_ResultColor, g_AutoMatch_AttackStopped
 
     g_AutoMatch_MaxRuns := ConfigManager.Read("AutoMatch", "MaxRuns", 0)
-    g_AutoMatch_ReadyPixelX := ConfigManager.Read("AutoMatch", "ReadyPixelX", 683)
-    g_AutoMatch_ReadyPixelY := ConfigManager.Read("AutoMatch", "ReadyPixelY", 493)
-    g_AutoMatch_ReadyPixelColor := ConfigManager.Read("AutoMatch", "ReadyPixelColor", 0xFFFFFF)
+    g_AutoMatch_ReadyPixelX := ConfigManager.ReadCoord("AutoMatch", "ReadyPixelX", 683)
+    g_AutoMatch_ReadyPixelY := ConfigManager.ReadCoord("AutoMatch", "ReadyPixelY", 493)
+    g_AutoMatch_ReadyPixelColor := ConfigManager.ReadCoord("AutoMatch", "ReadyPixelColor", 0xFFFFFF)
     g_AutoMatch_ReadyTimeout := ConfigManager.Read("AutoMatch", "ReadyTimeout", 5)
     g_AutoMatch_SeekSteps := ConfigManager.Read("AutoMatch", "SeekSteps", 18)
     g_AutoMatch_SeekMouseDelta := ConfigManager.Read("AutoMatch", "SeekMouseDelta", 50)
