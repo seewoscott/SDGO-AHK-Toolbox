@@ -9,7 +9,7 @@
 
 ; --- 常量定义 ---
 global APP_NAME := "SDGO工具脚本"
-global APP_VERSION := "1.5.6"
+global APP_VERSION := "2.0.0"
 global SCRIPT_DIR := A_ScriptDir
 global g_DesktopW := 0
 global g_DesktopH := 0
@@ -18,6 +18,8 @@ global g_ResolutionProfile := ""
 ; --- 加载库 ---
 #Include "Lib\ConfigManager.ahk"
 #Include "Lib\Logger.ahk"
+#Include "Lib\ScreenCapture.ahk"
+#Include "Lib\TargetLockDetector.ahk"
 #Include "Lib\GameUtils.ahk"
 
 ; --- 加载模块 ---

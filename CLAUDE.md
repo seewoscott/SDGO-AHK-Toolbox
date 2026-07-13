@@ -158,7 +158,7 @@ RestartGame_Transition(newState) {
 | `[Game]` | `InputMode` (control/setforeground), `WindowWidth`/`Height`, `ServerProfile` |
 | `[RestartGame]` | `Mode` (once/loop), `MaxLoops` (0=无限), `GamePath`/`GameDir`, 导航坐标, 各阶段超时 |
 | `[AutoFarm]` | `MaxRuns` (0=无限刷图) |
-| `[AutoMatch]` | `MaxRuns` (0=无限), `ReadyPixelX/Y/Color`, `SeekSteps`, `LockColor`, `ResultColor` |
+| `[AutoMatch]` | `MaxRuns` (0=无限), `ReadyPixelX/Y/Color`, `SeekSteps`, `SeekMaxRounds`, `ResultColor` |
 | `[FarmWatchdog]` | `Watch_Duration` (停滞检测秒数, 默认 120) |
 | `[Login]` | 登录流程坐标 (`Login_PasswordX/Y`, `Login_ConfirmX/Y`, `Channel_*`) |
 | `[Server.<Profile>]` | `Modules` (逗号分隔的模块清单), `GameExe`, `LauncherExe`, `GameDir`, `GamePath`, `LoginPassword`, `LoginChannelColor`, `LogDir` |

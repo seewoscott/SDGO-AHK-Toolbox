@@ -53,6 +53,42 @@ class GameUtils {
         return this.s_LastRectResult
     }
 
+    ; 获取客户区的屏幕坐标和尺寸 (Tick级缓存，不回退到窗口外框)
+    static s_LastClientRectTick := 0
+    static s_LastClientRectResult := false
+    static GetClientRect() {
+        if (A_TickCount == this.s_LastClientRectTick)
+            return this.s_LastClientRectResult
+        this.s_LastClientRectTick := A_TickCount
+        if (!this.RefreshWindow())
+            return (this.s_LastClientRectResult := false)
+
+        try {
+            rectBuffer := Buffer(16, 0)
+            if (!DllCall("GetClientRect", "Ptr", this.g_hWnd, "Ptr", rectBuffer.Ptr))
+                throw Error("GetClientRect failed")
+
+            origin := Buffer(8, 0)
+            if (!DllCall("ClientToScreen", "Ptr", this.g_hWnd, "Ptr", origin.Ptr))
+                throw Error("ClientToScreen failed")
+
+            width := NumGet(rectBuffer, 8, "Int")
+            height := NumGet(rectBuffer, 12, "Int")
+            if (width <= 0 || height <= 0)
+                throw Error("invalid client size " width "x" height)
+
+            this.s_LastClientRectResult := {
+                x: NumGet(origin, 0, "Int"),
+                y: NumGet(origin, 4, "Int"),
+                w: width,
+                h: height
+            }
+            return this.s_LastClientRectResult
+        } catch {
+            return (this.s_LastClientRectResult := false)
+        }
+    }
+
     ; 激活游戏窗口到前景
     static ActivateGame() {
         if (!this.RefreshWindow())

@@ -17,7 +17,7 @@ global g_AutoMatch_SeekRounds := 0
 ; 配置项
 global g_AutoMatch_ReadyPixelX, g_AutoMatch_ReadyPixelY, g_AutoMatch_ReadyPixelColor
 global g_AutoMatch_ReadyTimeout, g_AutoMatch_SeekSteps, g_AutoMatch_SeekMouseDelta
-global g_AutoMatch_SeekMaxRounds, g_AutoMatch_LockColor, g_AutoMatch_AttackDuration
+global g_AutoMatch_SeekMaxRounds, g_AutoMatch_AttackDuration
 global g_AutoMatch_ResultColor, g_AutoMatch_AttackStopped := false
 ; WAIT_START 角色判定状态（全局，确保停止/重启后重置）
 global g_AutoMatch_StartBtnFound := false
@@ -31,7 +31,7 @@ AutoMatch_Init() {
     global g_AutoMatch_MaxRuns
     global g_AutoMatch_ReadyPixelX, g_AutoMatch_ReadyPixelY, g_AutoMatch_ReadyPixelColor
     global g_AutoMatch_ReadyTimeout, g_AutoMatch_SeekSteps, g_AutoMatch_SeekMouseDelta
-    global g_AutoMatch_SeekMaxRounds, g_AutoMatch_LockColor, g_AutoMatch_AttackDuration
+    global g_AutoMatch_SeekMaxRounds, g_AutoMatch_AttackDuration
     global g_AutoMatch_ResultColor, g_AutoMatch_AttackStopped
 
     g_AutoMatch_MaxRuns := ConfigManager.Read("AutoMatch", "MaxRuns", 0)
@@ -42,7 +42,6 @@ AutoMatch_Init() {
     g_AutoMatch_SeekSteps := ConfigManager.Read("AutoMatch", "SeekSteps", 18)
     g_AutoMatch_SeekMouseDelta := ConfigManager.Read("AutoMatch", "SeekMouseDelta", 50)
     g_AutoMatch_SeekMaxRounds := ConfigManager.Read("AutoMatch", "SeekMaxRounds", 4)
-    g_AutoMatch_LockColor := ConfigManager.Read("AutoMatch", "LockColor", 0x73B279)
     g_AutoMatch_AttackDuration := ConfigManager.Read("AutoMatch", "AttackDuration", 60)
     g_AutoMatch_ResultColor := ConfigManager.Read("AutoMatch", "ResultColor", 0x25B3D1)
 
@@ -94,10 +93,11 @@ AutoMatch_Tick() {
     global g_AutoMatch_SeekStep, g_AutoMatch_SeekRounds
     global g_AutoMatch_ReadyPixelX, g_AutoMatch_ReadyPixelY, g_AutoMatch_ReadyPixelColor
     global g_AutoMatch_ReadyTimeout, g_AutoMatch_SeekSteps, g_AutoMatch_SeekMouseDelta
-    global g_AutoMatch_SeekMaxRounds, g_AutoMatch_LockColor, g_AutoMatch_AttackDuration
+    global g_AutoMatch_SeekMaxRounds, g_AutoMatch_AttackDuration
     global g_AutoMatch_ResultColor, g_AutoMatch_AttackStopped
     static s_PrevState := ""
     static s_PrevCombatSub := ""
+    static s_LastLockCaptureErrorLog := 0
 
     if (!g_AutoMatch_Enabled)
         return
@@ -300,6 +300,7 @@ AutoMatch_Tick() {
         switch g_AutoMatch_CombatSub {
         case "SEEK":
             ; 旋转索敌: 按住右键 + 鼠标右移拖动旋转视角
+            GameUtils.ActivateGame()
             CoordMode("Mouse", "Screen")
             SendInput("{RButton down}")
             Sleep(30)
@@ -314,16 +315,25 @@ AutoMatch_Tick() {
             SendInput("{RButton up}")
             Sleep(30)
 
-            ; 旋转结束后搜一次九宫格中心的锁定框颜色
-            cx1 := gw/3, cy1 := gh/3, cx2 := gw*2/3, cy2 := gh*2/3
-            if (PixelSearch(&px, &py, cx1, cy1, cx2, cy2, g_AutoMatch_LockColor, 20)) {
-                Logger.Debug("[刷场次] 锁定敌机! (颜色 0x" Format("{:06X}", g_AutoMatch_LockColor) " 命中 @" px "," py ")")
+            ; 旋转结束后截取客户区相对区域，检测左右对称的绿色锁定框结构
+            clientRect := GameUtils.GetClientRect()
+            lockResult := clientRect
+                ? TargetLockDetector.Detect(clientRect)
+                : {state: "ERROR", error: "无法获取游戏客户区坐标"}
+            if (lockResult.state == "LOCKED") {
+                Logger.Info("[刷场次] 结构锁定进入攻击")
                 SendInput("{RButton down}")
                 Sleep(50)
                 g_AutoMatch_CombatSub := "ATTACK"
                 g_AutoMatch_CombatStart := A_TickCount
                 g_AutoMatch_StateStart := A_TickCount
                 return
+            }
+            if (lockResult.state == "ERROR"
+                && (s_LastLockCaptureErrorLog == 0
+                    || A_TickCount - s_LastLockCaptureErrorLog >= 10000)) {
+                Logger.Warn("[刷场次] 锁定检测截图失败, 继续索敌: " lockResult.error)
+                s_LastLockCaptureErrorLog := A_TickCount
             }
 
             ; 每 tick 计数, 满一圈进 ADVANCE
@@ -345,7 +355,7 @@ AutoMatch_Tick() {
             g_AutoMatch_SeekStep := 0
             g_AutoMatch_SeekRounds++
             if (g_AutoMatch_SeekRounds >= g_AutoMatch_SeekMaxRounds) {
-                Logger.Debug("[刷场次] 索敌" g_AutoMatch_SeekRounds "轮未果, 兜底进入攻击")
+                Logger.Info("[刷场次] 索敌" g_AutoMatch_SeekRounds "轮未果, 轮数兜底进入攻击")
                 SendInput("{RButton down}")      ; 按住右键
                 Sleep(50)
                 g_AutoMatch_CombatSub := "ATTACK"
