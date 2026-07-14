@@ -7,6 +7,8 @@ class TargetLockDetector {
     static RegionRight := 0.62
     static RegionBottom := 0.72
     static SampleStep := 3
+    static ReferenceClientWidth := 1024
+    static ReferenceClientHeight := 768
     static GreenMin := 200
     static GreenRedDelta := 20
     static GreenBlueDelta := 30
@@ -24,7 +26,9 @@ class TargetLockDetector {
             if (!capture.ok)
                 return {state: "ERROR", error: capture.error}
 
-            return {state: this.Analyze(capture, region), error: ""}
+            scaleX := Max(0.01, clientRect.w / this.ReferenceClientWidth)
+            scaleY := Max(0.01, clientRect.h / this.ReferenceClientHeight)
+            return {state: this.Analyze(capture, region, scaleX, scaleY), error: ""}
         } catch as err {
             return {state: "ERROR", error: err.Message}
         }
@@ -38,7 +42,7 @@ class TargetLockDetector {
         return {x: x1, y: y1, w: Max(1, x2 - x1), h: Max(1, y2 - y1)}
     }
 
-    static Analyze(capture, region) {
+    static Analyze(capture, region, scaleX := 1.0, scaleY := 1.0) {
         x1 := Max(0, Round(region.x - capture.x))
         y1 := Max(0, Round(region.y - capture.y))
         x2 := Min(capture.w - 1, x1 + region.w - 1)
@@ -53,7 +57,8 @@ class TargetLockDetector {
         leftMaxY := y1
         rightMinY := y2
         rightMaxY := y1
-        step := this.SampleStep
+        stepX := Max(1, Round(this.SampleStep * scaleX))
+        stepY := Max(1, Round(this.SampleStep * scaleY))
 
         y := y1
         while (y <= y2) {
@@ -75,12 +80,12 @@ class TargetLockDetector {
                         rightMaxY := Max(rightMaxY, y)
                     }
                 }
-                x += step
+                x += stepX
             }
-            y += step
+            y += stepY
         }
 
-        minCount := this.RequiredSidePixelCount(region.w)
+        minCount := this.RequiredSidePixelCount(region.w, stepX)
         minSpan := region.h * this.MinVerticalSpanRatio
         symmetric := leftCount >= minCount && rightCount >= minCount
         verticalShape := leftMaxY - leftMinY >= minSpan
@@ -88,8 +93,10 @@ class TargetLockDetector {
         return symmetric && verticalShape ? "LOCKED" : "UNLOCKED"
     }
 
-    static RequiredSidePixelCount(regionWidth) {
-        return Max(4, Round((regionWidth / this.SampleStep) * this.MinCountRatio))
+    static RequiredSidePixelCount(regionWidth, stepX := 0) {
+        if (stepX <= 0)
+            stepX := this.SampleStep
+        return Max(4, Round((regionWidth / stepX) * this.MinCountRatio))
     }
 
     static IsLockGreen(r, g, b) {

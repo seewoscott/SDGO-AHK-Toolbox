@@ -72,10 +72,17 @@ class Logger {
     ; 刷盘
     static Flush() {
         if (this.g_Buffer == "" || this.g_LogFile == "")
-            return
-        try FileAppend(this.g_Buffer, this.g_LogFile, "UTF-8")
-        this.g_Buffer := ""
-        this.g_BufferSize := 0
+            return true
+        try {
+            FileAppend(this.g_Buffer, this.g_LogFile, "UTF-8")
+            this.g_Buffer := ""
+            this.g_BufferSize := 0
+            return true
+        } catch as err {
+            ; 不递归写 Logger；保留缓冲，下一条日志会再次 Flush。
+            OutputDebug("Logger.Flush failed: " err.Message)
+            return false
+        }
     }
 
     ; 注册 GUI 日志更新回调

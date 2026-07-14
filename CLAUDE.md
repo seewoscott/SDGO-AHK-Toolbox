@@ -27,7 +27,7 @@ SDGO工具脚本.ahk (Hub)
   └── (独立) Modules/ScreenWatcher.ahk (异常画面监控, 未被主脚本 #Include, 可独立运行)
 ```
 
-**包含顺序**: ConfigManager → Logger → GameUtils → AutoFarm → RestartGame → AutoFarmMulti → FarmWatchdog → AutoMatch。ScreenWatcher 独立于主脚本，需要时可通过 INI 开关或单独启动。
+**包含顺序**: ConfigManager → Logger → ScreenCapture → TargetLockDetector → CombatTargetDetector → RoomSelfDetector → GameUtils → 各功能模块。ScreenWatcher 独立于主脚本，需要时可通过 INI 开关或单独启动。
 
 **运行时模型**: `SetTimer(GuiTick, 1000)` 每秒调用所有已加载模块的 `_Tick()`。每个模块在 Tick 内做像素/图像检测、状态判断和键鼠操作。
 
@@ -158,7 +158,7 @@ RestartGame_Transition(newState) {
 | `[Game]` | `InputMode` (control/setforeground), `WindowWidth`/`Height`, `ServerProfile` |
 | `[RestartGame]` | `Mode` (once/loop), `MaxLoops` (0=无限), `GamePath`/`GameDir`, 导航坐标, 各阶段超时 |
 | `[AutoFarm]` | `MaxRuns` (0=无限刷图) |
-| `[AutoMatch]` | `MaxRuns` (0=无限), `ReadyPixelX/Y/Color`, `SeekSteps`, `SeekMaxRounds`, `ResultColor` |
+| `[AutoMatch]` | `MaxRuns` (0=无限), `ReadyTimeout`, `PrimaryWeaponKey`, `LockWeaponKey`, `ResultColor` |
 | `[FarmWatchdog]` | `Watch_Duration` (停滞检测秒数, 默认 120) |
 | `[Login]` | 登录流程坐标 (`Login_PasswordX/Y`, `Login_ConfirmX/Y`, `Channel_*`) |
 | `[Server.<Profile>]` | `Modules` (逗号分隔的模块清单), `GameExe`, `LauncherExe`, `GameDir`, `GamePath`, `LoginPassword`, `LoginChannelColor`, `LogDir` |

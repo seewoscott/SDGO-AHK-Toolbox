@@ -88,4 +88,45 @@ class ScreenCapture {
             bits: bits
         }
     }
+
+    static CountColorMatches(capture, region, color, variation, maxMatches := 1) {
+        if (!capture.ok)
+            return 0
+
+        x1 := Max(0, Round(region.x - capture.x))
+        y1 := Max(0, Round(region.y - capture.y))
+        x2 := Min(capture.w - 1, Round(region.x + region.w - 1 - capture.x))
+        y2 := Min(capture.h - 1, Round(region.y + region.h - 1 - capture.y))
+        if (x2 < x1 || y2 < y1)
+            return 0
+
+        value := IsNumber(color) ? Integer(color) : Integer(color)
+        targetR := (value >> 16) & 255
+        targetG := (value >> 8) & 255
+        targetB := value & 255
+        variation := Max(0, Min(255, Round(variation)))
+        maxMatches := Max(1, Round(maxMatches))
+        count := 0
+        y := y1
+        while (y <= y2) {
+            rowOffset := y * capture.stride
+            x := x1
+            while (x <= x2) {
+                pixel := NumGet(capture.bits, rowOffset + x * 4, "UInt")
+                b := pixel & 255
+                g := (pixel >> 8) & 255
+                r := (pixel >> 16) & 255
+                if (Abs(r - targetR) <= variation
+                    && Abs(g - targetG) <= variation
+                    && Abs(b - targetB) <= variation) {
+                    count++
+                    if (count >= maxMatches)
+                        return count
+                }
+                x++
+            }
+            y++
+        }
+        return count
+    }
 }
