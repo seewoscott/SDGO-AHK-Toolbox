@@ -1,30 +1,31 @@
 ; AutoMatch.ahk - room identity, ready/start handling and dual-weapon combat loop.
 
-class AutoMatchLockSweep {
-    static InitialDelayMs := 30
-    static IntervalMs := 50
-    static StepCount := 20
-    static DeltaX := 2
-    static SettleMs := 30
+class AutoMatchSweepActions {
+    ActivateGame() => GameUtils.ActivateGame()
+    SelectWeapon(key) => GameUtils.SendGameKeyHeld(
+        key, AutoMatchPolicy.WeaponKeyHoldMs, 0, true)
+    RightButtonDown() => SendInput("{RButton down}")
+    RightButtonUp() => SendInput("{RButton up}")
+    Delay(milliseconds) => Sleep(milliseconds)
+    StartTimer(interval) => SetTimer(AutoMatch_LockSweepTimer, interval)
+    StopTimer() => SetTimer(AutoMatch_LockSweepTimer, 0)
+
+    GetMousePosition() {
+        CoordMode("Mouse", "Screen")
+        MouseGetPos(&x, &y)
+        return {x: x, y: y}
+    }
+
+    MoveMouse(x, y) {
+        CoordMode("Mouse", "Screen")
+        MouseMove(x, y, 0)
+    }
 }
 
-class AutoMatchPolicy {
-    static RoomConfirmFrames := 3
-    static LockLossFrames := 3
-    static PrimaryShotOffsets := [0, 3000, 6000]
-
-    static ShouldStopOutput(outputStart, now, durationSeconds) {
-        return outputStart > 0 && now - outputStart >= durationSeconds * 1000
-    }
-
-    static IsPrimaryShotDue(shotCount, elapsedMs) {
-        return shotCount < this.PrimaryShotOffsets.Length
-            && elapsedMs >= this.PrimaryShotOffsets[shotCount + 1]
-    }
-
-    static ShouldFallbackFromLock(failureCount) {
-        return failureCount >= this.LockLossFrames
-    }
+class AutoMatchPrimaryActions {
+    Fire() => AutoMatch_FirePrimaryShot()
+    StartTimer(delayMs) => SetTimer(AutoMatch_PrimaryAttackTimer, -delayMs)
+    StopTimer() => SetTimer(AutoMatch_PrimaryAttackTimer, 0)
 }
 
 global g_AutoMatch_Enabled := false
@@ -42,6 +43,9 @@ global g_AutoMatch_PrimaryShotCount := 0
 global g_AutoMatch_PrimaryStart := 0
 global g_AutoMatch_LockFailureCount := 0
 global g_AutoMatch_AttackStopped := false
+global g_AutoMatch_ResultCounted := false
+global g_AutoMatch_LastRoomDetection := 0
+global g_AutoMatch_LastCombatDetection := 0
 
 global g_AutoMatch_ReadyTimeout := 5
 global g_AutoMatch_PrimaryWeaponKey := "1"
@@ -55,15 +59,17 @@ global g_AutoMatch_RoomStableKey := ""
 global g_AutoMatch_RoomStableSlot := 0
 global g_AutoMatch_RoomStableState := "UNKNOWN"
 global g_AutoMatch_RoomAmbiguousCount := 0
+global g_AutoMatch_RoomTracker := AutoMatchRoomIdentityTracker.CreateState()
 global g_AutoMatch_LastRoomAction := 0
 global g_AutoMatch_LastRoomWarn := 0
 global g_AutoMatch_LastDetectionWarn := 0
+global g_AutoMatch_LastInputWarn := 0
 
-global g_AutoMatch_SweepActive := false
-global g_AutoMatch_SweepStep := 0
-global g_AutoMatch_SweepX := 0
-global g_AutoMatch_SweepY := 0
+global g_AutoMatch_SweepState := AutoMatchSweepRunner.CreateState()
+global g_AutoMatch_SweepActions := AutoMatchSweepActions()
 global g_AutoMatch_SweepCompletedAt := 0
+global g_AutoMatch_PrimaryState := AutoMatchPrimaryRunner.CreateState()
+global g_AutoMatch_PrimaryActions := AutoMatchPrimaryActions()
 
 AutoMatch_Init() {
     global g_AutoMatch_MaxRuns, g_AutoMatch_ReadyTimeout
@@ -90,6 +96,7 @@ AutoMatch_Start() {
     AutoMatch_ResetRoomIdentity()
     AutoMatch_ResetCombat()
     Logger.Info("AutoMatch: 已启动 | MaxRuns=" g_AutoMatch_MaxRuns)
+    OverlayManager.AutoShow()
     return true
 }
 
@@ -97,8 +104,10 @@ AutoMatch_Stop() {
     global g_AutoMatch_Enabled, g_AutoMatch_RunCount
     g_AutoMatch_Enabled := false
     AutoMatch_StopSweep()
+    AutoMatch_StopPrimaryAttack()
     SendInput("{LButton up}{RButton up}")
     Logger.Info("AutoMatch: 已停止 (共 " g_AutoMatch_RunCount " 场)")
+    OverlayManager.AutoHide()
 }
 
 AutoMatch_Cleanup() {
@@ -110,24 +119,25 @@ AutoMatch_ResetRoomIdentity() {
     global g_AutoMatch_RoomStableKey, g_AutoMatch_RoomStableSlot, g_AutoMatch_RoomStableState
     global g_AutoMatch_RoomAmbiguousCount, g_AutoMatch_LastRoomAction
     global g_AutoMatch_SearchCache, g_AutoMatch_CombatCache
-    g_AutoMatch_RoomPendingKey := ""
-    g_AutoMatch_RoomPendingCount := 0
-    g_AutoMatch_RoomStableKey := ""
-    g_AutoMatch_RoomStableSlot := 0
-    g_AutoMatch_RoomStableState := "UNKNOWN"
-    g_AutoMatch_RoomAmbiguousCount := 0
+    global g_AutoMatch_LastRoomDetection
+    global g_AutoMatch_RoomTracker
+    g_AutoMatch_RoomTracker := AutoMatchRoomIdentityTracker.CreateState()
+    AutoMatch_SyncRoomIdentityGlobals()
     g_AutoMatch_LastRoomAction := 0
     g_AutoMatch_SearchCache.LastX := -1, g_AutoMatch_SearchCache.LastY := -1
     g_AutoMatch_SearchCache.MissCount := 0
     g_AutoMatch_CombatCache.LastX := -1, g_AutoMatch_CombatCache.LastY := -1
     g_AutoMatch_CombatCache.MissCount := 0
+    g_AutoMatch_LastRoomDetection := 0
 }
 
 AutoMatch_ResetCombat() {
     global g_AutoMatch_CombatSub, g_AutoMatch_CombatStart, g_AutoMatch_OutputStart
     global g_AutoMatch_PrimaryShotCount, g_AutoMatch_PrimaryStart
     global g_AutoMatch_LockFailureCount, g_AutoMatch_AttackStopped
+    global g_AutoMatch_LastCombatDetection
     AutoMatch_StopSweep()
+    AutoMatch_StopPrimaryAttack()
     g_AutoMatch_CombatSub := ""
     g_AutoMatch_CombatStart := 0
     g_AutoMatch_OutputStart := 0
@@ -135,6 +145,7 @@ AutoMatch_ResetCombat() {
     g_AutoMatch_PrimaryStart := 0
     g_AutoMatch_LockFailureCount := 0
     g_AutoMatch_AttackStopped := false
+    g_AutoMatch_LastCombatDetection := 0
 }
 
 AutoMatch_Tick() {
@@ -152,6 +163,7 @@ AutoMatch_Tick() {
             s_GameMissingWarned := true
         }
         AutoMatch_StopSweep()
+        AutoMatch_StopPrimaryAttack()
         SendInput("{LButton up}{RButton up}")
         if (g_AutoMatch_State == "COMBAT" && g_AutoMatch_CombatSub == "LOCK_SWEEP")
             AutoMatch_SetCombatSub("SELECT_W2")
@@ -174,19 +186,15 @@ AutoMatch_Tick() {
     case "WAIT_START":
         AutoMatch_TickRoom(windowRect, clientRect)
 
+    case "WAIT_ROOM":
+        AutoMatch_TickWaitRoom(windowRect, clientRect)
+
     case "WAIT_LOAD":
         if (AutoMatch_FindCombatUi(windowRect))
             AutoMatch_EnterCombat()
 
     case "COMBAT":
-        if (!g_AutoMatch_AttackStopped && AutoMatchPolicy.ShouldStopOutput(
-            g_AutoMatch_OutputStart, A_TickCount, g_AutoMatch_AttackDuration)) {
-            Logger.Warn("[刷场次] 战斗输出达到" g_AutoMatch_AttackDuration "秒, 停止攻击并等待结算")
-            AutoMatch_StopSweep()
-            SendInput("{LButton up}{RButton up}")
-            g_AutoMatch_AttackStopped := true
-            AutoMatch_SetCombatSub("WAIT_RESULT")
-        }
+        AutoMatch_CheckOutputDeadline()
         if (g_AutoMatch_CombatSub == "WAIT_RESULT") {
             if (AutoMatch_CheckResult(clientRect))
                 AutoMatch_EnterResult()
@@ -200,90 +208,97 @@ AutoMatch_Tick() {
 }
 
 AutoMatch_TickRoom(windowRect, clientRect) {
-    global g_AutoMatch_SearchCache, g_AutoMatch_LastRoomAction, g_AutoMatch_ReadyTimeout
+    global g_AutoMatch_LastRoomAction, g_AutoMatch_ReadyTimeout
     global g_AutoMatch_RoomStableSlot, g_AutoMatch_RoomStableState
+    global g_AutoMatch_LastRoomDetection
 
     if (AutoMatch_FindCombatUi(windowRect)) {
         AutoMatch_EnterCombat()
         return
     }
 
-    gx := windowRect.x, gy := windowRect.y, gw := windowRect.w, gh := windowRect.h
-    startFound := GameUtils.SmartSearch(&fx, &fy,
-        "*90 " GameUtils.ResolveImagePath(A_ScriptDir "\Data\Images\start_btn.png"),
-        gx + gw/2, gy + gh/2, gx + gw, gy + gh, g_AutoMatch_SearchCache)
-    if (!startFound)
+    if (!AutoMatch_FindStartButton(windowRect))
         return
 
     result := RoomSelfDetector.Detect(clientRect)
+    g_AutoMatch_LastRoomDetection := result
     if (!AutoMatch_UpdateRoomIdentity(result)) {
         if (result.status != "OK")
             AutoMatch_LogRoomProblem(result)
         return
     }
 
-    interval := Max(1, g_AutoMatch_ReadyTimeout) * 1000
     if (g_AutoMatch_RoomStableState == "READY") {
         Logger.Info("[刷场次] 本人槽位" g_AutoMatch_RoomStableSlot "已 Ready, 等待加载")
         AutoMatch_SetState("WAIT_LOAD")
         return
     }
 
-    if (A_TickCount - g_AutoMatch_LastRoomAction < interval && g_AutoMatch_LastRoomAction > 0)
+    if (!AutoMatchPolicy.IsRoomActionDue(g_AutoMatch_LastRoomAction,
+        A_TickCount, g_AutoMatch_ReadyTimeout))
         return
 
     GameUtils.ActivateGame()
     if (g_AutoMatch_RoomStableState == "NOT_READY") {
         Logger.Info("[刷场次] 本人槽位" g_AutoMatch_RoomStableSlot "未 Ready, 按 F5")
-        SendInput("{F5}")
+        actions := AutoMatchPolicy.RoomActionSequence(g_AutoMatch_RoomStableState)
+        GameUtils.SendGameKeyHeld(actions[1], AutoMatchPolicy.RoomKeyHoldMs, 0, true)
         g_AutoMatch_LastRoomAction := A_TickCount
     } else if (g_AutoMatch_RoomStableState == "MASTER") {
         Logger.Info("[刷场次] 本人是房主, 顺序发送 F5 → Enter")
-        SendInput("{F5}")
-        Sleep(100)
-        SendInput("{Enter}")
+        actions := AutoMatchPolicy.RoomActionSequence(g_AutoMatch_RoomStableState)
+        GameUtils.SendGameKeyHeld(actions[1], AutoMatchPolicy.RoomKeyHoldMs, 0, true)
+        Sleep(AutoMatchPolicy.MasterInterKeyDelayMs)
+        GameUtils.SendGameKeyHeld(actions[2], AutoMatchPolicy.RoomKeyHoldMs, 0, true)
         g_AutoMatch_LastRoomAction := A_TickCount
     }
 }
 
+AutoMatch_TickWaitRoom(windowRect, clientRect) {
+    global g_AutoMatch_LastRoomDetection
+    if (!AutoMatch_FindStartButton(windowRect))
+        return
+    result := RoomSelfDetector.Detect(clientRect)
+    g_AutoMatch_LastRoomDetection := result
+    if (!AutoMatch_UpdateRoomIdentity(result)) {
+        if (result.status != "OK")
+            AutoMatch_LogRoomProblem(result)
+        return
+    }
+    Logger.Info("[刷场次] 已确认返回房间, 恢复身份检测")
+    AutoMatch_SetState("WAIT_START")
+}
+
+AutoMatch_FindStartButton(windowRect) {
+    global g_AutoMatch_SearchCache
+    gx := windowRect.x, gy := windowRect.y, gw := windowRect.w, gh := windowRect.h
+    return GameUtils.SmartSearch(&fx, &fy,
+        "*90 " GameUtils.ResolveImagePath(A_ScriptDir "\Data\Images\start_btn.png"),
+        gx + gw/2, gy + gh/2, gx + gw, gy + gh, g_AutoMatch_SearchCache)
+}
+
 AutoMatch_UpdateRoomIdentity(result) {
+    global g_AutoMatch_RoomTracker
+    global g_AutoMatch_RoomStableSlot, g_AutoMatch_RoomStableState
+    outcome := AutoMatchRoomIdentityTracker.Update(g_AutoMatch_RoomTracker, result)
+    AutoMatch_SyncRoomIdentityGlobals()
+    if (outcome.newly_confirmed) {
+        Logger.Info("[刷场次] 本人槽位确认: " g_AutoMatch_RoomStableSlot
+            " | 状态=" g_AutoMatch_RoomStableState)
+    }
+    return outcome.accepted
+}
+
+AutoMatch_SyncRoomIdentityGlobals() {
     global g_AutoMatch_RoomPendingKey, g_AutoMatch_RoomPendingCount
     global g_AutoMatch_RoomStableKey, g_AutoMatch_RoomStableSlot, g_AutoMatch_RoomStableState
-    global g_AutoMatch_RoomAmbiguousCount
-
-    if (result.status != "OK") {
-        g_AutoMatch_RoomPendingKey := ""
-        g_AutoMatch_RoomPendingCount := 0
-        g_AutoMatch_RoomAmbiguousCount++
-        if (g_AutoMatch_RoomAmbiguousCount >= AutoMatchPolicy.RoomConfirmFrames) {
-            g_AutoMatch_RoomStableKey := ""
-            g_AutoMatch_RoomStableSlot := 0
-            g_AutoMatch_RoomStableState := "UNKNOWN"
-        }
-        return false
-    }
-
-    g_AutoMatch_RoomAmbiguousCount := 0
-    candidateKey := result.self_slot_index ":" result.self_state
-    if (candidateKey == g_AutoMatch_RoomStableKey)
-        return true
-    if (candidateKey != g_AutoMatch_RoomPendingKey) {
-        g_AutoMatch_RoomPendingKey := candidateKey
-        g_AutoMatch_RoomPendingCount := 1
-        return false
-    }
-    g_AutoMatch_RoomPendingCount++
-    if (g_AutoMatch_RoomPendingCount < AutoMatchPolicy.RoomConfirmFrames)
-        return false
-
-    g_AutoMatch_RoomStableKey := candidateKey
-    g_AutoMatch_RoomStableSlot := result.self_slot_index
-    g_AutoMatch_RoomStableState := result.self_state
-    g_AutoMatch_RoomPendingKey := ""
-    g_AutoMatch_RoomPendingCount := 0
-    Logger.Info("[刷场次] 本人槽位确认: " g_AutoMatch_RoomStableSlot
-        " | 状态=" g_AutoMatch_RoomStableState)
-    return true
+    global g_AutoMatch_RoomAmbiguousCount, g_AutoMatch_RoomTracker
+    g_AutoMatch_RoomPendingKey := g_AutoMatch_RoomTracker.pending_key
+    g_AutoMatch_RoomPendingCount := g_AutoMatch_RoomTracker.pending_count
+    g_AutoMatch_RoomStableKey := g_AutoMatch_RoomTracker.stable_key
+    g_AutoMatch_RoomStableSlot := g_AutoMatch_RoomTracker.stable_slot
+    g_AutoMatch_RoomStableState := g_AutoMatch_RoomTracker.stable_state
+    g_AutoMatch_RoomAmbiguousCount := g_AutoMatch_RoomTracker.ambiguous_count
 }
 
 AutoMatch_LogRoomProblem(result) {
@@ -324,6 +339,7 @@ AutoMatch_TickCombat(clientRect) {
     global g_AutoMatch_CombatSub, g_AutoMatch_SweepCompletedAt
     global g_AutoMatch_PrimaryShotCount, g_AutoMatch_PrimaryStart
     global g_AutoMatch_LockFailureCount
+    global g_AutoMatch_LastCombatDetection
 
     switch g_AutoMatch_CombatSub {
     case "SELECT_W2":
@@ -336,9 +352,13 @@ AutoMatch_TickCombat(clientRect) {
         if (A_TickCount - g_AutoMatch_SweepCompletedAt < AutoMatchLockSweep.SettleMs)
             return
         result := CombatTargetDetector.Detect(clientRect)
-        if (AutoMatch_IsDetectionError(result))
+        g_AutoMatch_LastCombatDetection := result
+        decision := AutoMatchPolicy.CombatDetectionDecision(result)
+        if (decision == "ERROR") {
+            AutoMatch_IsDetectionError(result)
             return
-        if (result.lock_state == "LOCKED" && result.target_presence == "PRESENT") {
+        }
+        if (decision == "LOCKED") {
             Logger.Info("[刷场次] 武器二已锁定目标, 进入持续攻击")
             SendInput("{RButton down}")
             g_AutoMatch_LockFailureCount := 0
@@ -349,17 +369,17 @@ AutoMatch_TickCombat(clientRect) {
         }
 
     case "PRIMARY_ATTACK":
-        elapsed := A_TickCount - g_AutoMatch_PrimaryStart
-        if (AutoMatchPolicy.IsPrimaryShotDue(g_AutoMatch_PrimaryShotCount, elapsed))
-            AutoMatch_FirePrimaryShot()
-        if (g_AutoMatch_PrimaryShotCount >= AutoMatchPolicy.PrimaryShotOffsets.Length)
-            AutoMatch_BeginLockSweep()
+        return
 
     case "LOCKED_ATTACK":
         result := CombatTargetDetector.Detect(clientRect)
-        if (AutoMatch_IsDetectionError(result))
+        g_AutoMatch_LastCombatDetection := result
+        decision := AutoMatchPolicy.CombatDetectionDecision(result)
+        if (decision == "ERROR") {
+            AutoMatch_IsDetectionError(result)
             return
-        if (result.lock_state == "LOCKED" && result.target_presence == "PRESENT") {
+        }
+        if (decision == "LOCKED") {
             g_AutoMatch_LockFailureCount := 0
             AutoMatch_ClickLeft()
         } else {
@@ -376,29 +396,19 @@ AutoMatch_TickCombat(clientRect) {
 
 AutoMatch_BeginLockSweep() {
     global g_AutoMatch_LockWeaponKey
-    global g_AutoMatch_SweepActive, g_AutoMatch_SweepStep
-    global g_AutoMatch_SweepX, g_AutoMatch_SweepY, g_AutoMatch_SweepCompletedAt
-
-    AutoMatch_StopSweep()
-    GameUtils.ActivateGame()
-    SendInput("{" g_AutoMatch_LockWeaponKey "}")
-    CoordMode("Mouse", "Screen")
-    SendInput("{RButton down}")
-    Sleep(AutoMatchLockSweep.InitialDelayMs)
-    MouseGetPos(&sx, &sy)
-    g_AutoMatch_SweepX := sx
-    g_AutoMatch_SweepY := sy
-    g_AutoMatch_SweepStep := 0
+    global g_AutoMatch_SweepState, g_AutoMatch_SweepActions, g_AutoMatch_SweepCompletedAt
     g_AutoMatch_SweepCompletedAt := 0
-    g_AutoMatch_SweepActive := true
     AutoMatch_SetCombatSub("LOCK_SWEEP")
-    SetTimer(AutoMatch_LockSweepTimer, AutoMatchLockSweep.IntervalMs)
+    if (!AutoMatchSweepRunner.Begin(g_AutoMatch_SweepState,
+        g_AutoMatch_SweepActions, g_AutoMatch_LockWeaponKey)) {
+        AutoMatch_SetCombatSub("SELECT_W2")
+        AutoMatch_LogInputProblem("无法激活游戏或切换武器二，扫动未启动")
+    }
 }
 
 AutoMatch_LockSweepTimer() {
     global g_AutoMatch_Enabled, g_AutoMatch_State, g_AutoMatch_CombatSub
-    global g_AutoMatch_SweepActive, g_AutoMatch_SweepStep
-    global g_AutoMatch_SweepX, g_AutoMatch_SweepY, g_AutoMatch_SweepCompletedAt
+    global g_AutoMatch_SweepState, g_AutoMatch_SweepActions, g_AutoMatch_SweepCompletedAt
 
     if (!g_AutoMatch_Enabled || g_AutoMatch_State != "COMBAT"
         || g_AutoMatch_CombatSub != "LOCK_SWEEP" || !GameUtils.IsGameRunning()) {
@@ -410,43 +420,79 @@ AutoMatch_LockSweepTimer() {
         return
     }
 
-    CoordMode("Mouse", "Screen")
-    g_AutoMatch_SweepX += AutoMatchLockSweep.DeltaX
-    MouseMove(g_AutoMatch_SweepX, g_AutoMatch_SweepY, 0)
-    g_AutoMatch_SweepStep++
-    if (g_AutoMatch_SweepStep >= AutoMatchLockSweep.StepCount) {
-        SetTimer(AutoMatch_LockSweepTimer, 0)
-        g_AutoMatch_SweepActive := false
-        SendInput("{RButton up}")
+    if (AutoMatchSweepRunner.Step(g_AutoMatch_SweepState, g_AutoMatch_SweepActions)) {
         g_AutoMatch_SweepCompletedAt := A_TickCount
         AutoMatch_SetCombatSub("CHECK_TARGET")
     }
 }
 
 AutoMatch_StopSweep() {
-    global g_AutoMatch_SweepActive
-    SetTimer(AutoMatch_LockSweepTimer, 0)
-    if (g_AutoMatch_SweepActive)
-        SendInput("{RButton up}")
-    g_AutoMatch_SweepActive := false
+    global g_AutoMatch_SweepState, g_AutoMatch_SweepActions
+    AutoMatchSweepRunner.Stop(g_AutoMatch_SweepState, g_AutoMatch_SweepActions)
 }
 
 AutoMatch_BeginPrimaryAttack() {
     global g_AutoMatch_PrimaryWeaponKey, g_AutoMatch_PrimaryShotCount, g_AutoMatch_PrimaryStart
+    global g_AutoMatch_PrimaryState, g_AutoMatch_PrimaryActions
     SendInput("{RButton up}")
-    SendInput("{" g_AutoMatch_PrimaryWeaponKey "}")
+    if (!GameUtils.SendGameKeyHeld(g_AutoMatch_PrimaryWeaponKey,
+        AutoMatchPolicy.WeaponKeyHoldMs, 0, true)) {
+        AutoMatch_LogInputProblem("无法切换武器一，保持当前状态等待重试")
+        return
+    }
     g_AutoMatch_PrimaryShotCount := 0
     g_AutoMatch_PrimaryStart := A_TickCount
     AutoMatch_SetCombatSub("PRIMARY_ATTACK")
-    AutoMatch_FirePrimaryShot()
+    AutoMatchPrimaryRunner.Begin(g_AutoMatch_PrimaryState, g_AutoMatch_PrimaryActions)
+}
+
+AutoMatch_PrimaryAttackTimer() {
+    global g_AutoMatch_Enabled, g_AutoMatch_State, g_AutoMatch_CombatSub
+    global g_AutoMatch_AttackStopped
+    global g_AutoMatch_PrimaryState, g_AutoMatch_PrimaryActions
+
+    if (!g_AutoMatch_Enabled || g_AutoMatch_State != "COMBAT"
+        || g_AutoMatch_CombatSub != "PRIMARY_ATTACK"
+        || g_AutoMatch_AttackStopped || !GameUtils.IsGameRunning()) {
+        AutoMatch_StopPrimaryAttack()
+        SendInput("{LButton up}")
+        return
+    }
+
+    if (AutoMatch_CheckOutputDeadline())
+        return
+
+    if (AutoMatchPrimaryRunner.Step(g_AutoMatch_PrimaryState, g_AutoMatch_PrimaryActions))
+        AutoMatch_BeginLockSweep()
+}
+
+AutoMatch_StopPrimaryAttack() {
+    global g_AutoMatch_PrimaryState, g_AutoMatch_PrimaryActions
+    AutoMatchPrimaryRunner.Stop(g_AutoMatch_PrimaryState, g_AutoMatch_PrimaryActions)
+}
+
+AutoMatch_CheckOutputDeadline() {
+    global g_AutoMatch_OutputStart, g_AutoMatch_AttackDuration, g_AutoMatch_AttackStopped
+    if (g_AutoMatch_AttackStopped || !AutoMatchPolicy.ShouldStopOutput(
+        g_AutoMatch_OutputStart, A_TickCount, g_AutoMatch_AttackDuration))
+        return false
+
+    Logger.Warn("[刷场次] 战斗输出达到" g_AutoMatch_AttackDuration "秒, 停止攻击并等待结算")
+    AutoMatch_StopSweep()
+    AutoMatch_StopPrimaryAttack()
+    SendInput("{LButton up}{RButton up}")
+    g_AutoMatch_AttackStopped := true
+    AutoMatch_SetCombatSub("WAIT_RESULT")
+    return true
 }
 
 AutoMatch_FirePrimaryShot() {
-    global g_AutoMatch_PrimaryShotCount
+    global g_AutoMatch_PrimaryShotCount, g_AutoMatch_PrimaryStart
     AutoMatch_ClickLeft()
     g_AutoMatch_PrimaryShotCount++
     Logger.Debug("[刷场次] 武器一攻击 " g_AutoMatch_PrimaryShotCount
-        "/" AutoMatchPolicy.PrimaryShotOffsets.Length)
+        "/" AutoMatchPolicy.PrimaryShotOffsets.Length
+        " | +" (A_TickCount - g_AutoMatch_PrimaryStart) "ms")
 }
 
 AutoMatch_ClickLeft() {
@@ -470,6 +516,15 @@ AutoMatch_IsDetectionError(result) {
     return true
 }
 
+AutoMatch_LogInputProblem(message) {
+    global g_AutoMatch_LastInputWarn
+    if (g_AutoMatch_LastInputWarn == 0
+        || A_TickCount - g_AutoMatch_LastInputWarn >= 10000) {
+        Logger.Warn("[刷场次] " message)
+        g_AutoMatch_LastInputWarn := A_TickCount
+    }
+}
+
 AutoMatch_CheckResult(clientRect) {
     global g_AutoMatch_ResultColor
     CoordMode("Pixel", "Screen")
@@ -485,27 +540,38 @@ AutoMatch_CheckResult(clientRect) {
 }
 
 AutoMatch_EnterResult() {
-    global g_AutoMatch_State, g_AutoMatch_StateStart
+    global g_AutoMatch_State, g_AutoMatch_StateStart, g_AutoMatch_ResultCounted
     AutoMatch_StopSweep()
+    AutoMatch_StopPrimaryAttack()
     SendInput("{LButton up}{RButton up}")
     g_AutoMatch_State := "RESULT"
     g_AutoMatch_StateStart := A_TickCount
+    g_AutoMatch_ResultCounted := false
 }
 
 AutoMatch_TickResult() {
     global g_AutoMatch_RunCount, g_AutoMatch_MaxRuns
-    Sleep(1500)
-    g_AutoMatch_RunCount++
-    Logger.Info("[刷场次] 第 " g_AutoMatch_RunCount " 场完成, 返回大厅")
-    if (g_AutoMatch_MaxRuns > 0 && g_AutoMatch_RunCount >= g_AutoMatch_MaxRuns) {
-        Logger.Info("[刷场次] 已达 MaxRuns=" g_AutoMatch_MaxRuns ", 自动停止")
-        AutoMatch_Stop()
+    global g_AutoMatch_StateStart, g_AutoMatch_ResultCounted
+    elapsed := A_TickCount - g_AutoMatch_StateStart
+
+    if (!g_AutoMatch_ResultCounted) {
+        if (!AutoMatchPolicy.ShouldCountResult(elapsed))
+            return
+        g_AutoMatch_RunCount++
+        g_AutoMatch_ResultCounted := true
+        Logger.Info("[刷场次] 第 " g_AutoMatch_RunCount " 场完成, 返回大厅")
+        if (g_AutoMatch_MaxRuns > 0 && g_AutoMatch_RunCount >= g_AutoMatch_MaxRuns) {
+            Logger.Info("[刷场次] 已达 MaxRuns=" g_AutoMatch_MaxRuns ", 自动停止")
+            AutoMatch_Stop()
+        }
         return
     }
-    Sleep(10000)
+
+    if (!AutoMatchPolicy.ShouldReturnToRoom(elapsed))
+        return
     AutoMatch_ResetRoomIdentity()
     AutoMatch_ResetCombat()
-    AutoMatch_SetState("WAIT_START")
+    AutoMatch_SetState("WAIT_ROOM")
 }
 
 AutoMatch_SetState(newState) {

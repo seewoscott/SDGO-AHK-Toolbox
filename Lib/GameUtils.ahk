@@ -118,6 +118,27 @@ class GameUtils {
         return this.SendGameKey("{" key "}", delay)
     }
 
+    ; 发送具有明确按下时长的按键。部分 D3D9 界面会忽略瞬时 down/up。
+    static SendGameKeyHeld(key, holdMs := 50, delay := 0, forceForeground := false) {
+        if (!this.IsGameRunning())
+            return false
+        holdMs := Max(1, Round(holdMs))
+        if (this.g_InputMode == "control" && !forceForeground) {
+            ControlSend("{" key " down}", , "ahk_exe " ConfigManager.GameExe)
+            Sleep(holdMs)
+            ControlSend("{" key " up}", , "ahk_exe " ConfigManager.GameExe)
+        } else {
+            if (!this.ActivateGame())
+                return false
+            SendInput("{" key " down}")
+            Sleep(holdMs)
+            SendInput("{" key " up}")
+        }
+        if (delay > 0)
+            Sleep(delay)
+        return true
+    }
+
     ; 后台鼠标点击 (窗口相对坐标)
     static GameClick(x, y, button := "Left", clicks := 1) {
         if (!this.IsGameRunning())

@@ -22,7 +22,9 @@ global g_ResolutionProfile := ""
 #Include "Lib\TargetLockDetector.ahk"
 #Include "Lib\CombatTargetDetector.ahk"
 #Include "Lib\RoomSelfDetector.ahk"
+#Include "Lib\AutoMatchPolicy.ahk"
 #Include "Lib\GameUtils.ahk"
+#Include "Lib\OverlayManager.ahk"
 
 ; --- 加载模块 ---
 #Include "Modules\AutoFarm.ahk"
@@ -118,6 +120,9 @@ Init() {
     ; 构建并显示 GUI
     BuildGui()
 
+    ; 初始化覆盖层
+    OverlayManager.Init()
+
     ; 设置托盘图标
     SetupTray()
 
@@ -135,6 +140,8 @@ RegisterGlobalHotkeys() {
     Hotkey("$F7", (*) => ToggleModule("AutoFarm"), "On")
     Hotkey("$F8", (*) => ToggleModule("AutoFarmMulti"), "On")
     Hotkey("$F9", (*) => ToggleModule("AutoMatch"), "On")
+    ; 自动化/远程控制备用入口；保留物理 F9 的 $ 防回触发语义。
+    Hotkey(mod "F9", (*) => ToggleModule("AutoMatch"), "On")
 
     ; F12: 坐标捕获
     Hotkey("$F12", (*) => CaptureCoords(), "On")
@@ -145,6 +152,9 @@ RegisterGlobalHotkeys() {
     ; 紧急停止 (Esc)
     stopKey := ConfigManager.Read("General", "EmergencyStop", "Esc")
     Hotkey(mod . stopKey, (*) => EmergencyStop(), "On")
+
+    ; 覆盖层开关 (F10)
+    try Hotkey("$F10", (*) => OverlayManager.Toggle(), "On")
 }
 
 ; --- 坐标捕获 (F12) ---
@@ -482,6 +492,9 @@ GuiTick() {
     AutoFarmMulti_Tick()
     AutoMatch_Tick()
 
+    ; 更新覆盖层
+    OverlayManager.Tick()
+
     UpdateGuiStatus()
 }
 
@@ -617,6 +630,7 @@ CleanupAll() {
     FarmWatchdog_Cleanup()
     AutoFarmMulti_Cleanup()
     AutoMatch_Cleanup()
+    OverlayManager.Cleanup()
     Logger.Flush()
 }
 
