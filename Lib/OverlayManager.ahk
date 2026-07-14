@@ -241,29 +241,12 @@ class OverlayManager {
     }
 
     static Reposition() {
-        windowRect := GameUtils.GetWindowRect()
         workArea := this.GetWorkArea()
-        if (!windowRect || !workArea)
+        if (!workArea)
             return
         gap := 8
-
-        ; 首选: 游戏窗口右侧
-        rightX := windowRect.x + windowRect.w + gap
-        if (rightX + this.s_W <= workArea.right) {
-            x := rightX
-            y := this.Clamp(windowRect.y, workArea.top, workArea.bottom - this.s_H)
-        } else {
-            ; 备选: 左侧
-            leftX := windowRect.x - gap - this.s_W
-            if (leftX >= workArea.left) {
-                x := leftX
-                y := this.Clamp(windowRect.y, workArea.top, workArea.bottom - this.s_H)
-            } else {
-                ; 兜底: 窗口下方
-                x := this.Clamp(windowRect.x, workArea.left, workArea.right - this.s_W)
-                y := Min(windowRect.y + windowRect.h + gap, workArea.bottom - this.s_H)
-            }
-        }
+        x := workArea.left + gap
+        y := workArea.bottom - gap - this.s_H
         this.s_Gui.Show("x" Round(x) " y" Round(y) " w" this.s_W " h" this.s_H " NA")
     }
 
