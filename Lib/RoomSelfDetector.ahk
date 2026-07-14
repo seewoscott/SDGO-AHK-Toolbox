@@ -118,10 +118,14 @@ class RoomSelfDetector {
         bottom := this.MeasureBrightCyanEdge(capture, bands, region.y + region.h - edgeH, edgeH * 2)
         minEdge := Min(top, bottom)
         averageEdge := (top + bottom) / 2
+        ; (Port from GameUiMonitorAHK) 双边缘检测奖励: 上下均有亮青色时,
+        ; effectiveMinEdge 获得 1.4x 倍率, 避免高分辨率插值导致边缘偏淡而漏判
+        bothDetected := top > 0 && bottom > 0
+        effectiveMinEdge := Min(1.0, minEdge * (bothDetected ? 1.4 : 1.0))
         return {
             top: top, bottom: bottom,
             score: 100 * this.Clamp(0.65 * minEdge + 0.35 * averageEdge, 0, 1),
-            eligible: minEdge >= this.SelfMinEdgeCoverage
+            eligible: effectiveMinEdge >= this.SelfMinEdgeCoverage
         }
     }
 
