@@ -190,6 +190,7 @@ AutoMatch_Tick() {
         AutoMatch_TickWaitRoom(windowRect, clientRect)
 
     case "WAIT_LOAD":
+        AutoMatch_TickWaitLoad(clientRect)
         if (AutoMatch_FindCombatUi(windowRect))
             AutoMatch_EnterCombat()
 
@@ -267,6 +268,24 @@ AutoMatch_TickWaitRoom(windowRect, clientRect) {
     }
     Logger.Info("[刷场次] 已确认返回房间, 恢复身份检测")
     AutoMatch_SetState("WAIT_START")
+}
+
+AutoMatch_TickWaitLoad(clientRect) {
+    global g_AutoMatch_LastRoomDetection
+    global g_AutoMatch_RoomStableState
+    result := RoomSelfDetector.Detect(clientRect)
+    g_AutoMatch_LastRoomDetection := result
+    if (!AutoMatch_UpdateRoomIdentity(result)) {
+        if (result.status != "OK")
+            AutoMatch_LogRoomProblem(result)
+        return
+    }
+    if (g_AutoMatch_RoomStableState == "MASTER"
+        || g_AutoMatch_RoomStableState == "NOT_READY") {
+        Logger.Info("[刷场次] WAIT_LOAD 检测到身份="
+            g_AutoMatch_RoomStableState ", 退回 WAIT_START")
+        AutoMatch_SetState("WAIT_START")
+    }
 }
 
 AutoMatch_FindStartButton(windowRect) {
