@@ -434,7 +434,7 @@ AutoMatch_StopSweep() {
 AutoMatch_BeginPrimaryAttack() {
     global g_AutoMatch_PrimaryWeaponKey, g_AutoMatch_PrimaryShotCount, g_AutoMatch_PrimaryStart
     global g_AutoMatch_PrimaryState, g_AutoMatch_PrimaryActions
-    SendInput("{RButton up}")
+    SendInput("{RButton down}")
     if (!GameUtils.SendGameKeyHeld(g_AutoMatch_PrimaryWeaponKey,
         AutoMatchPolicy.WeaponKeyHoldMs, 0, true)) {
         AutoMatch_LogInputProblem("无法切换武器一，保持当前状态等待重试")

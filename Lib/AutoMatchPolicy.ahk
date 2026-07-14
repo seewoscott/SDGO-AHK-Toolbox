@@ -14,7 +14,7 @@ class AutoMatchPolicy {
     static RoomKeyHoldMs := 50
     static WeaponKeyHoldMs := 50
     static MasterInterKeyDelayMs := 100
-    static PrimaryShotOffsets := [0, 3000, 6000]
+    static PrimaryShotOffsets := [0]
     static ResultCountDelayMs := 1500
     static ResultReturnDelayMs := 11500
 
@@ -47,7 +47,7 @@ class AutoMatchPolicy {
     static CombatDetectionDecision(result) {
         if (result.error != "")
             return "ERROR"
-        if (result.lock_state == "LOCKED" && result.target_presence == "PRESENT")
+        if (result.lock_state == "LOCKED")
             return "LOCKED"
         return "PRIMARY"
     }
