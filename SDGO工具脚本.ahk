@@ -293,7 +293,7 @@ BuildGui() {
     g_Gui.SetFont("s9 norm")
 
     ; 模块1: RestartGame (F5)
-    gb3 := g_Gui.Add("GroupBox", "x20 y+10 w460 h70", "重启建房 (RestartGame)")
+    gb3 := g_Gui.Add("GroupBox", "x20 y+10 w460 h70", "重启建房 (RestartGame)  [F5]")
     desc3 := g_Gui.Add("Text", "xp+20 yp+25 w250", "重启游戏 → 登录 → 创建任务房间")
     btnRestart := g_Gui.Add("Button", "x380 yp-5 w80 h28 vBtnRestart", "启动")
     btnRestart.OnEvent("Click", (*) => ToggleModule("RestartGame"))
@@ -301,7 +301,7 @@ BuildGui() {
     g_AllModuleControls["RestartGame"] := [gb3, desc3, btnRestart]
 
     ; 模块2: FarmWatchdog (F6)
-    gb4 := g_Gui.Add("GroupBox", "x20 y+10 w460 h70", "看门狗 (FarmWatchdog)")
+    gb4 := g_Gui.Add("GroupBox", "x20 y+10 w460 h70", "看门狗 (FarmWatchdog)  [F6]")
     desc4 := g_Gui.Add("Text", "xp+20 yp+25 w200", "刷图停滞/游戏缺失 → 触发重启建房")
     restartCountW := g_Gui.Add("Text", "x300 yp-5 w70 vTxtRestartCountW", "重启: 0")
     g_Ctrl_FarmWatchdog_RestartCount := restartCountW
@@ -311,7 +311,7 @@ BuildGui() {
     g_AllModuleControls["FarmWatchdog"] := [gb4, desc4, restartCountW, btnWatch]
 
     ; 模块3: AutoFarm (F7)
-    gb1 := g_Gui.Add("GroupBox", "x20 y+10 w460 h70", "自动刷图-单人 (AutoFarm)")
+    gb1 := g_Gui.Add("GroupBox", "x20 y+10 w460 h70", "自动刷图-单人 (AutoFarm)  [F7]")
     desc1 := g_Gui.Add("Text", "xp+20 yp+25 w200", "检测开始→F5→战斗→结算→循环")
     runCount := g_Gui.Add("Text", "x300 yp-5 w70 vTxtRunCount", "局数: 0")
     g_Ctrl_AutoFarm_RunCount := runCount
@@ -321,7 +321,7 @@ BuildGui() {
     g_AllModuleControls["AutoFarm"] := [gb1, desc1, runCount, btnAutoFarm]
 
     ; 模块4: AutoFarmMulti (F8)
-    gb2 := g_Gui.Add("GroupBox", "x20 y+10 w460 h70", "自动刷图-多人 (AutoFarmMulti)")
+    gb2 := g_Gui.Add("GroupBox", "x20 y+10 w460 h70", "自动刷图-多人 (AutoFarmMulti)  [F8]")
     desc2 := g_Gui.Add("Text", "xp+20 yp+25 w200", "检测开始→F5→战斗→结算→循环")
     runCountM := g_Gui.Add("Text", "x300 yp w70 vTxtRunCountM", "局数: 0")
     g_Ctrl_AutoFarmMulti_RunCount := runCountM
@@ -331,7 +331,7 @@ BuildGui() {
     g_AllModuleControls["AutoFarmMulti"] := [gb2, desc2, runCountM, btnAutoFarmM]
 
     ; 模块5: AutoMatch (F9)
-    gb5 := g_Gui.Add("GroupBox", "x20 y+10 w460 h70", "刷场次 (AutoMatch)")
+    gb5 := g_Gui.Add("GroupBox", "x20 y+10 w460 h70", "刷场次 (AutoMatch)  [F9]")
     desc5 := g_Gui.Add("Text", "xp+20 yp+25 w200", "自动识别房主/成员 → 战斗 → 结算 → 循环")
     runCountAM := g_Gui.Add("Text", "x300 yp w70 vTxtRunCountAM", "场次: 0")
     g_Ctrl_AutoMatch_RunCount := runCountAM
@@ -343,9 +343,13 @@ BuildGui() {
     btnStop.OnEvent("Click", (*) => EmergencyStop())
     btnStop.SetFont("s10 bold", "Segoe UI")
 
-    ; 底部热键说明
+    btnReload := g_Gui.Add("Button", "x130 yp w100 h35 vBtnReload", "重新启动")
+    btnReload.OnEvent("Click", (*) => Reload())
+    btnReload.SetFont("s10 bold", "Segoe UI")
+
+    ; 底部热键说明（模块热键已显示在各标题中）
     g_Gui.SetFont("s8")
-    g_Gui.Add("Text", "x140 yp+5 w340 h30", "快捷键: F5=建房 F6=监控 F7=单人 F8=多人 F9=场次 | Ctrl+Alt+R=重载 | Ctrl+Alt+Esc=停止 | F12=坐标")
+    g_Gui.Add("Text", "x250 yp+5 w240 h30", "全局: Ctrl+Alt+R=重载  Ctrl+Alt+Esc=停止  F10=覆盖层  F12=坐标")
 
     ; ===== 选项卡2: 设置 =====
     g_Tab.UseTab(2)

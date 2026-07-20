@@ -14,17 +14,23 @@ SDGO工具脚本 — 基于 **AutoHotkey v2** 的 SD高达私服（SDGO UNION 1.
 
 ```
 SDGO工具脚本.ahk (Hub)
-  ├── #Include → Lib/ConfigManager.ahk   (INI 读写 + 分辨率适配)
-  ├── #Include → Lib/Logger.ahk          (分级日志 + 文件轮转)
-  ├── #Include → Lib/GameUtils.ahk       (游戏窗口检测 + 键鼠发送 + 图像搜索 + 登录)
+  ├── #Include → Lib/ConfigManager.ahk        (INI 读写 + 分辨率适配)
+  ├── #Include → Lib/Logger.ahk               (分级日志 + 文件轮转)
+  ├── #Include → Lib/ScreenCapture.ahk        (GDI BitBlt 截图)
+  ├── #Include → Lib/TargetLockDetector.ahk   (锁定框检测)
+  ├── #Include → Lib/CombatTargetDetector.ahk (敌方标记检测)
+  ├── #Include → Lib/RoomSelfDetector.ahk     (房间 12 槽状态检测)
+  ├── #Include → Lib/AutoMatchPolicy.ahk      (AutoMatch 时序/策略类)
+  ├── #Include → Lib/GameUtils.ahk            (游戏窗口交互中枢)
+  ├── #Include → Lib/OverlayManager.ahk       (透明覆盖层)
   │
-  ├── #Include → Modules/AutoFarm.ahk       (单人刷图, 当前启用)
-  ├── #Include → Modules/AutoFarmMulti.ahk  (多人刷图, 当前启用)
-  ├── #Include → Modules/AutoMatch.ahk      (刷场次, 当前启用)
-  ├── #Include → Modules/RestartGame.ahk    (重启建房, 当前启用)
-  ├── #Include → Modules/FarmWatchdog.ahk   (刷图看门狗, 当前启用)
+  ├── #Include → Modules/AutoFarm.ahk          (单人刷图)
+  ├── #Include → Modules/AutoFarmMulti.ahk     (多人刷图)
+  ├── #Include → Modules/AutoMatch.ahk         (刷场次)
+  ├── #Include → Modules/RestartGame.ahk       (重启建房)
+  ├── #Include → Modules/FarmWatchdog.ahk      (刷图看门狗)
   │
-  └── (独立) Modules/ScreenWatcher.ahk (异常画面监控, 未被主脚本 #Include, 可独立运行)
+  └── Modules/ScreenWatcher.ahk (异常画面监控, 未被 #Include, 独立运行)
 ```
 
 **包含顺序**: ConfigManager → Logger → ScreenCapture → TargetLockDetector → CombatTargetDetector → RoomSelfDetector → GameUtils → 各功能模块。ScreenWatcher 独立于主脚本，需要时可通过 INI 开关或单独启动。
@@ -38,6 +44,12 @@ SDGO工具脚本.ahk (Hub)
 | `SDGO工具脚本.ahk` | 主脚本 — GUI、热键、模块调度、紧急停止 |
 | `Lib/ConfigManager.ahk` | 静态类，INI 读写 + 类型自动解析 + 分辨率适配坐标回退 |
 | `Lib/Logger.ahk` | 静态类，分级日志（DEBUG/INFO/WARN/ERROR）、缓冲刷盘、文件轮转 |
+| `Lib/ScreenCapture.ahk` | GDI BitBlt 截图 + `CountColorMatches()` 颜色计数，被三个 Detector 共享 |
+| `Lib/TargetLockDetector.ahk` | 绿色锁定框检测 → `"LOCKED"/"UNLOCKED"` |
+| `Lib/CombatTargetDetector.ahk` | 红色敌方标记检测 → `{presence, count}` + 锁定状态 |
+| `Lib/RoomSelfDetector.ahk` | 房间 12 槽状态检测 (EMPTY/MASTER/READY/NOT_READY) + 自身槽识别 |
+| `Lib/AutoMatchPolicy.ahk` | AutoMatch 子模块：策略/扫动/主攻/身份追踪类 |
+| `Lib/OverlayManager.ahk` | 透明覆盖层 GUI，显示房间/战斗/AutoMatch 状态 |
 | `Lib/GameUtils.ahk` | 静态类，游戏窗口交互中枢 — 窗口检测、ControlSend/Send 按键、ControlClick 鼠标、PixelSearch/ImageSearch、DoLogin() 登录流程 |
 | `Modules/*.ahk` | 功能模块，统一接口（见下文） |
 | `Data/Images/*.png` | 图像模板 — 用于 ImageSearch 检测游戏画面状态 |
@@ -63,7 +75,7 @@ SDGO工具脚本.ahk (Hub)
 - **状态变量**: `g_ModuleName_State` (字符串，如 `"WAIT_START"`)
 - **状态计时**: `g_ModuleName_StateStart` (记录进入状态的 `A_TickCount`)，通过 `A_TickCount - g_ModuleName_StateStart` 计算超时
 - **状态流转**: 在 `Tick()` 的 `switch` 中按状态处理，状态切换直接赋值 `g_ModuleName_State := "NEXT_STATE"`
-- **状态常量定义**（可选）: RestartGame 使用 `RESTART_STATE := Map("IDLE", 0, ...)` 做枚举映射（实际 switch 仍用字符串）
+- **状态常量定义**: RestartGame 定义了 `RESTART_STATE` Map（但未被 switch 使用，仅作参考），实际流转仍用字符串直接比较
 
 典型 Tick 结构（以 RestartGame 为推荐范例）：
 
@@ -125,6 +137,8 @@ RestartGame_Transition(newState) {
 | `ImageSearch(imagePath, x1:=0, y1:=0, x2:="", y2:="", variation:=30)` | 图像模板搜索 |
 | `SmartSearch(&outX, &outY, imagePath, x1, y1, x2, y2, cacheObj, cacheSize:=60)` | 带缓存/回退的智能图像搜索（★ 新模块应使用此共享版本，不要重新实现） |
 | `ResolveImagePath(baseName)` | 4-tier 回退：先查 `服务器名_文件名`、`文件名_分辨率`、`文件名`，最后原路径 |
+| `SendGameKeyHeld(key, holdMs, delay, forceForeground)` | 按下→保持 holdMs 毫秒→抬起；用于 D3D9 接口不支持瞬时按键的场景 |
+| `CheckLogFile(pattern, gameDir)` | 在 `zoG_log` 目录的最新日志中搜索字符串 |
 | `DoLogin()` | 完整四阶段登录流程 |
 | `WaitFor(conditionFunc, timeoutMs:=5000, checkIntervalMs:=200)` | 轮询等待辅助 |
 
@@ -132,13 +146,69 @@ RestartGame_Transition(newState) {
 
 **Login 流程** (`DoLogin()`): 四阶段 — 输入密码 → 确认按钮 → 频道选择 (PixelSearch 0x071940) → 频道列表验证 (ImageSearch `channel_list.png`) → 选择初级频道1 → 大厅验证 (ImageSearch `lobby.png`)。
 
+## 检测器工具 (Detectors)
+
+四个底层检测组件，由 AutoMatch 和 OverlayManager 调用。共享 `ScreenCapture.ahk` 做 GDI BitBlt 截图以避免重复 D3D9 访问。
+
+| 组件 | 功能 | 输出 |
+|------|------|------|
+| `ScreenCapture.ahk` | GDI BitBlt 区域截图 + `CountColorMatches()` 颜色计数 | capture 对象 / 匹配数 |
+| `TargetLockDetector.ahk` | 画面中心区域绿色锁定括号检测 | `"LOCKED"` / `"UNLOCKED"` |
+| `CombatTargetDetector.ahk` | 红色敌方标记检测 + 委托锁检测 | `{presence, count, lock_state}` |
+| `RoomSelfDetector.ahk` | 12 槽房间列表检测 + 自己槽识别 | `{self_slot_index, slots[], status}` |
+
+`CombatTargetDetector.Detect()` 接受可选 `sourceCapture` 参数，避免重复截图。`RoomSelfDetector` 通过每槽右侧亮青色边覆盖比例识别"自己"的槽位。
+
+## OverlayManager (透明覆盖层)
+
+**文件**: `Lib/OverlayManager.ahk`
+
+在屏幕上叠加一个半透明面板，实时显示检测状态。锚定在主显示器工作区左下角。
+
+**INI 配置** `[Overlay]`:
+
+| 键 | 默认值 | 说明 |
+|----|--------|------|
+| `Enabled` | `0` | 0=关闭, 1=启动时自动开启 |
+| `Opacity` | `80` | 面板透明度 (0-100) |
+| `UpdateInterval` | `3` | 多少 tick 刷新一次检测 |
+| `PositionInterval` | `15` | 多少 tick 重定位一次位置 |
+| `FontSize` | `9` | 文本字号 |
+
+**显示内容**:
+1. 游戏窗口尺寸 + 输入模式
+2. 房间 12 槽状态 (EMPTY/MASTER/READY/NOT_READY) + 自己槽
+3. 战斗锁定状态 (LOCKED/UNLOCKED) + 目标存在 (PRESENT/ABSENT) + 数量
+4. AutoMatch 状态 + 子状态 + 场次计数（仅 AutoMatch 启用时）
+5. 时间戳 + 帧计数
+
+**关键方法**: `Init()` → `Tick()`（每秒由 GuiTick 调用）→ `AutoShow()/AutoHide()`（模块调用控制显隐）→ `Toggle()`（F10 热键）→ `Cleanup()`
+
+## AutoMatchPolicy.ahk — AutoMatch 策略层
+
+**文件**: `Lib/AutoMatchPolicy.ahk`
+
+定义了 4 个类 + 2 个 Action 包装类，实现 AutoMatch 战斗中的扫动/主攻/判定逻辑。采用 **策略模式**：Runner 类（纯状态机逻辑）委托 Action 类（I/O 操作），使逻辑可测试。
+
+| 类 | 作用 | 关键字段/方法 |
+|----|------|-------------|
+| `AutoMatchLockSweep` | 扫动时序常量 | `DeltaX=2`, `StepCount=20`, `IntervalMs=50` |
+| `AutoMatchPolicy` | 纯决策逻辑（无状态无 I/O） | `CombatDetectionDecision()`, `ShouldFallbackFromLock()`, `RoomActionSequence()` |
+| `AutoMatchRoomIdentityTracker` | 房主身份稳定追踪 | `CreateState()`, `Update(state, result)` — 3 帧确认窗口 |
+| `AutoMatchSweepRunner` | 扫动状态机 | `Begin()/Step()/Stop()` — 每步右移 DeltaX |
+| `AutoMatchPrimaryRunner` | 主攻定时器 (SetTimer 驱动) | `Begin()/Step()/Stop()` — 每 3 秒一枪 |
+| `AutoMatchSweepActions` | 封装扫动的 ActivateGame/SelectWeapon/鼠标操作 | — |
+| `AutoMatchPrimaryActions` | 封装主攻的 Fire() + 定时器控制 | — |
+
+**SmartSearch 缓存**: AutoMatch 使用两个独立缓存 — `g_AutoMatch_SearchCache`（`start_btn.png`）和 `g_AutoMatch_CombatCache`（`combat_ui.png`）。
+
 ## 模块间协作
 
 - **`ToggleModule("ModuleName")`**: 模块间触发机制。FarmWatchdog 和 ScreenWatcher 检测到异常时调用 `ToggleModule("RestartGame")` 触发自动重启建房（ToggleModule 内部会 Start 已停用的模块或 Stop 已运行的模块）
 - **RunCount 共享**: FarmWatchdog 读取 `g_AutoFarm_RunCount`、`g_AutoFarmMulti_RunCount`、`g_AutoMatch_RunCount` 做刷图/场次停滞检测
 - **图像回退**: AutoMatch 通过 `GameUtils.ResolveImagePath()` 4-tier 回退自动匹配服务端专属图像（`服务器名_` 前缀）
 - **SmartSearch**: ★ 只有 AutoMatch 使用 `GameUtils.SmartSearch()`。AutoFarm 和 AutoFarmMulti 有本地重复实现。**新模块应直接调用 `GameUtils.SmartSearch()`**，不要重新实现。
-- **ScreenWatcher**: 未被主脚本 #Include，是独立的可选模块。需要时自行启动或通过 INI 开关启用。
+- **ScreenWatcher**: 未被主脚本 #Include，是独立的可选模块。检测异常画面（`watch.png`）或游戏进程消失持续 `Watch_Duration` 秒（INI `[ScreenWatcher]`，默认 5）后触发重启。可通过 INI 开关或单独启动。
 
 ## 配置文件 (Data/Settings.ini)
 
@@ -160,6 +230,7 @@ RestartGame_Transition(newState) {
 | `[AutoFarm]` | `MaxRuns` (0=无限刷图) |
 | `[AutoMatch]` | `MaxRuns` (0=无限), `ReadyTimeout`, `PrimaryWeaponKey`, `LockWeaponKey`, `ResultColor` |
 | `[FarmWatchdog]` | `Watch_Duration` (停滞检测秒数, 默认 120) |
+| `[Overlay]` | `Enabled` (0/1), `Opacity` (0-100), `UpdateInterval`/`PositionInterval` (tick 数), `FontSize` |
 | `[Login]` | 登录流程坐标 (`Login_PasswordX/Y`, `Login_ConfirmX/Y`, `Channel_*`) |
 | `[Server.<Profile>]` | `Modules` (逗号分隔的模块清单), `GameExe`, `LauncherExe`, `GameDir`, `GamePath`, `LoginPassword`, `LoginChannelColor`, `LogDir` |
 | `[Logging]` | `LogLevel` (DEBUG/INFO/WARN/ERROR), `MaxLogFiles` (轮转保留数) |
@@ -173,6 +244,7 @@ RestartGame_Transition(newState) {
 | `F7` | 切换 AutoFarm（单人刷图） | 启用 |
 | `F8` | 切换 AutoFarmMulti（多人刷图） | 启用 |
 | `F9` | 切换 AutoMatch（刷场次） | 启用 |
+| `F10` | 切换 OverlayManager 覆盖层显隐 | 启用 |
 | `F12` | 坐标捕获 — 复制鼠标 Client 坐标+颜色到剪贴板和日志 | 启用 |
 | `Ctrl+Alt+R` | 重载脚本 | 启用 |
 | `Ctrl+Alt+Esc` | 紧急停止所有模块 | 启用 |
@@ -182,16 +254,31 @@ RestartGame_Transition(newState) {
 | 文件 | 使用模块 | 用途 | 容差 |
 |------|----------|------|------|
 | `start_btn.png` | AutoFarm, AutoFarmMulti, AutoMatch | 检测开始按钮 | *90 |
+| `start_btn_1920x1080.png` | AutoFarm, AutoFarmMulti, AutoMatch | 1920x1080 分辨率下的开始按钮 | *90 |
 | `combat_ui.png` | AutoFarm, AutoFarmMulti, AutoMatch | 检测战斗 UI 加载完成 | *90 |
+| `combat_ui_1920x1080.png` | AutoFarm, AutoFarmMulti, AutoMatch | 1920x1080 分辨率下的战斗 UI | *90 |
 | `end.png` | AutoFarm, AutoFarmMulti, AutoMatch | 检测战斗结束标志 | *90 |
-| `OC梦服_start_btn.png` | AutoMatch | 新服开始按钮 (ServerProfile=OC梦服 时自动匹配) | *90 |
-| `OC梦服_combat_ui.png` | AutoMatch | 新服战斗 UI (ServerProfile=OC梦服 时自动匹配) | *90 |
-| `OC梦服_end.png` | AutoMatch | 新服结束标志 (ServerProfile=OC梦服 时自动匹配) | *90 |
+| `end_1920x1080.png` | AutoFarm, AutoFarmMulti, AutoMatch | 1920x1080 分辨率下的结束标志 | *90 |
+| `OC梦服_start_btn.png` | AutoMatch | 梦服开始按钮 (ServerProfile=OC_CHINA 时自动匹配) | *90 |
+| `OC梦服_start_btn_1920x1080.png` | AutoMatch | 1920x1080 分辨率下的梦服开始按钮 | *90 |
+| `OC梦服_combat_ui.png` | AutoMatch | 梦服战斗 UI (ServerProfile=OC_CHINA 时自动匹配) | *90 |
+| `OC梦服_combat_ui_1920x1080.png` | AutoMatch | 1920x1080 分辨率下的梦服战斗 UI | *90 |
+| `OC梦服_end.png` | AutoMatch | 梦服结束标志 (ServerProfile=OC_CHINA 时自动匹配) | *90 |
+| `OC亚服_start_btn.png` | AutoFarm, AutoFarmMulti, AutoMatch | 亚服开始按钮 (ServerProfile=OC_ASIA 时自动匹配) | *90 |
+| `OC亚服_start_btn_1920x1080.png` | AutoFarm, AutoFarmMulti, AutoMatch | 1920x1080 分辨率下的亚服开始按钮 | *90 |
+| `OC亚服_combat_ui.png` | AutoFarm, AutoFarmMulti, AutoMatch | 亚服战斗 UI (ServerProfile=OC_ASIA 时自动匹配) | *90 |
+| `OC亚服_combat_ui_1920x1080.png` | AutoFarm, AutoFarmMulti, AutoMatch | 1920x1080 分辨率下的亚服战斗 UI | *90 |
 | `lobby.png` | RestartGame, GameUtils | 验证已进入大厅 | *120 |
+| `lobby_1920x1080.png` | RestartGame, GameUtils | 1920x1080 分辨率下的大厅 | *120 |
 | `create_room.png` | RestartGame | 验证创建房间界面 | *120 |
+| `create_room_1920x1080.png` | RestartGame | 1920x1080 分辨率下的创建房间界面 | *120 |
 | `in_room.png` | RestartGame | 验证已进入房间 | *120 |
+| `in_room_1920x1080.png` | RestartGame | 1920x1080 分辨率下的房间内界面 | *120 |
 | `channel_list.png` | GameUtils | 验证频道列表界面 | *120 |
+| `channel_list_1920x1080.png` | GameUtils | 1920x1080 分辨率下的频道列表 | *120 |
 | `channel_select.png` | GameUtils | 频道选择画面参考 | — |
+| `member.png` | — | 未被代码引用，可能为预留 | — |
+| `member_1920x1080.png` | — | member.png 的 1920x1080 变体 | — |
 | `watch.png` | ScreenWatcher | 异常画面监控 | *120 |
 
 ## 开发指南
