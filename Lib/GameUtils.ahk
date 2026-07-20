@@ -200,18 +200,26 @@ class GameUtils {
             cy1 := Max(y1, cacheObj.LastY - cacheSize)
             cx2 := Min(x2, cacheObj.LastX + cacheSize)
             cy2 := Min(y2, cacheObj.LastY + cacheSize)
-            if (ImageSearch(&outX, &outY, cx1, cy1, cx2, cy2, imagePath)) {
+            cacheOk := false
+            try
+                cacheOk := ImageSearch(&outX, &outY, cx1, cy1, cx2, cy2, imagePath)
+            catch
+                cacheObj.MissCount++
+            if (cacheOk) {
                 cacheObj.LastX := outX, cacheObj.LastY := outY
                 cacheObj.MissCount := 0
                 return true
             }
             cacheObj.MissCount++
         }
-        if (ImageSearch(&outX, &outY, x1, y1, x2, y2, imagePath)) {
-            cacheObj.LastX := outX, cacheObj.LastY := outY
-            cacheObj.MissCount := 0
-            return true
-        }
+        try {
+            if (ImageSearch(&outX, &outY, x1, y1, x2, y2, imagePath)) {
+                cacheObj.LastX := outX, cacheObj.LastY := outY
+                cacheObj.MissCount := 0
+                return true
+            }
+        } catch
+            return false
         return false
     }
 

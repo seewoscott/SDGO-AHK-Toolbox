@@ -64,6 +64,7 @@ global g_AutoMatch_LastRoomAction := 0
 global g_AutoMatch_LastRoomWarn := 0
 global g_AutoMatch_LastDetectionWarn := 0
 global g_AutoMatch_LastInputWarn := 0
+global g_AutoMatch_LastResultWarn := 0
 
 global g_AutoMatch_SweepState := AutoMatchSweepRunner.CreateState()
 global g_AutoMatch_SweepActions := AutoMatchSweepActions()
@@ -197,7 +198,7 @@ AutoMatch_Tick() {
     case "COMBAT":
         AutoMatch_CheckOutputDeadline()
         if (g_AutoMatch_CombatSub == "WAIT_RESULT") {
-            if (AutoMatch_CheckResult(clientRect))
+            if (AutoMatch_CheckResultSafe(clientRect))
                 AutoMatch_EnterResult()
             return
         }
@@ -607,4 +608,30 @@ AutoMatch_SetCombatSub(newSub) {
         Logger.Debug("[刷场次] 战斗子状态 " (g_AutoMatch_CombatSub ? g_AutoMatch_CombatSub : "入口")
             " → " newSub)
     g_AutoMatch_CombatSub := newSub
+}
+AutoMatch_LogResultProblem(message) {
+    global g_AutoMatch_LastResultWarn
+    if (g_AutoMatch_LastResultWarn == 0
+        || A_TickCount - g_AutoMatch_LastResultWarn >= 10000) {
+        Logger.Warn("[鍒峰満娆 " message)
+        g_AutoMatch_LastResultWarn := A_TickCount
+    }
+}
+
+AutoMatch_CheckResultSafe(clientRect) {
+    global g_AutoMatch_ResultColor
+    CoordMode("Pixel", "Screen")
+    x1 := clientRect.x + Round(clientRect.w / 3)
+    y1 := clientRect.y + Round(clientRect.h / 3)
+    x2 := clientRect.x + Round(clientRect.w * 2 / 3)
+    y2 := clientRect.y + Round(clientRect.h * 2 / 3)
+    try {
+        if (PixelSearch(&px, &py, x1, y1, x2, y2, g_AutoMatch_ResultColor, 20)) {
+            Logger.Info("[鍒峰満娆 妫€娴嬪埌缁撶畻棰滆壊 @" px "," py)
+            return true
+        }
+    } catch as err {
+        AutoMatch_LogResultProblem("结算颜色检测失败, 保持当前状态: " err.Message)
+    }
+    return false
 }
