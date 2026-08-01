@@ -115,6 +115,18 @@ AutoMatch_Cleanup() {
     AutoMatch_Stop()
 }
 
+; 重启建房前停止异步输入并回到房间状态，保留启用状态和已完成场次。
+AutoMatch_PrepareForRestart() {
+    global g_AutoMatch_State, g_AutoMatch_StateStart
+    AutoMatch_StopSweep()
+    AutoMatch_StopPrimaryAttack()
+    SendInput("{LButton up}{RButton up}")
+    AutoMatch_ResetRoomIdentity()
+    AutoMatch_ResetCombat()
+    g_AutoMatch_State := "WAIT_START"
+    g_AutoMatch_StateStart := A_TickCount
+}
+
 AutoMatch_ResetRoomIdentity() {
     global g_AutoMatch_RoomPendingKey, g_AutoMatch_RoomPendingCount
     global g_AutoMatch_RoomStableKey, g_AutoMatch_RoomStableSlot, g_AutoMatch_RoomStableState
@@ -155,10 +167,11 @@ AutoMatch_Tick() {
     global g_AutoMatch_Enabled, g_AutoMatch_State, g_AutoMatch_StateStart
     global g_AutoMatch_CombatSub
     global g_AutoMatch_OutputStart, g_AutoMatch_AttackDuration, g_AutoMatch_AttackStopped
+    global g_RestartGame_Enabled
     static s_GameMissingWarned := false
     static s_WindowMissingWarned := false
 
-    if (!g_AutoMatch_Enabled)
+    if (!g_AutoMatch_Enabled || g_RestartGame_Enabled)
         return
     if (!GameUtils.IsGameRunning()) {
         if (!s_GameMissingWarned) {

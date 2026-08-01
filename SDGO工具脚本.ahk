@@ -23,6 +23,7 @@ global g_ResolutionProfile := ""
 #Include "Lib\CombatTargetDetector.ahk"
 #Include "Lib\RoomSelfDetector.ahk"
 #Include "Lib\AutoMatchPolicy.ahk"
+#Include "Lib\RestartGamePolicy.ahk"
 #Include "Lib\GameUtils.ahk"
 #Include "Lib\OverlayManager.ahk"
 
@@ -294,7 +295,7 @@ BuildGui() {
 
     ; 模块1: RestartGame (F5)
     gb3 := g_Gui.Add("GroupBox", "x20 y+10 w460 h70", "重启建房 (RestartGame)  [F5]")
-    desc3 := g_Gui.Add("Text", "xp+20 yp+25 w250", "重启游戏 → 登录 → 创建任务房间")
+    desc3 := g_Gui.Add("Text", "xp+20 yp+25 w280", "重启游戏 → 按刷图/场次进入对应频道并建房")
     btnRestart := g_Gui.Add("Button", "x380 yp-5 w80 h28 vBtnRestart", "启动")
     btnRestart.OnEvent("Click", (*) => ToggleModule("RestartGame"))
     g_Ctrl_RestartGame := btnRestart
@@ -302,7 +303,7 @@ BuildGui() {
 
     ; 模块2: FarmWatchdog (F6)
     gb4 := g_Gui.Add("GroupBox", "x20 y+10 w460 h70", "看门狗 (FarmWatchdog)  [F6]")
-    desc4 := g_Gui.Add("Text", "xp+20 yp+25 w200", "刷图停滞/游戏缺失 → 触发重启建房")
+    desc4 := g_Gui.Add("Text", "xp+20 yp+25 w240", "刷图/场次停滞或游戏缺失 → 重启建房")
     restartCountW := g_Gui.Add("Text", "x300 yp-5 w70 vTxtRestartCountW", "重启: 0")
     g_Ctrl_FarmWatchdog_RestartCount := restartCountW
     btnWatch := g_Gui.Add("Button", "x380 yp-5 w80 h28 vBtnWatch", "启动")
@@ -535,7 +536,7 @@ UpdateGuiStatus() {
         if (g_AutoFarm_Enabled)
             parts.Push("刷图:ON")
         if (g_RestartGame_Enabled)
-            parts.Push("重启建房:ON")
+            parts.Push("重启建房:" RestartGamePolicy.WorkModeLabel(g_RestartGame_WorkMode))
         if (g_AutoFarmMulti_Enabled)
             parts.Push("刷图多人:ON")
         if (g_FarmWatchdog_Enabled)

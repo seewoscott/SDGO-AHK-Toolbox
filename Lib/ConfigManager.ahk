@@ -19,6 +19,7 @@ class ConfigManager {
     static LoginPassword := "SeewoScott"
     static LoginChannelColor := "0x071940"
     static RoomName := "炸狗房，新手来~"
+    static MatchRoomName := "自动解5~"
     static LogDir := ""
     static SupportedModules := ""
 

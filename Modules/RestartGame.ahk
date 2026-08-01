@@ -12,6 +12,7 @@ global g_RestartGame_Mode := "once"
 global g_RestartGame_LoopDelay := 30000
 global g_RestartGame_GamePath := ConfigManager.GamePath
 global g_RestartGame_GameDir := ConfigManager.GameDir
+global g_RestartGame_WorkMode := RestartGamePolicy.FarmMode
 
 global RESTART_STATE := Map(
     "IDLE", 0, "KILLING_PROCESS", 1, "LAUNCHING_GAME", 2,
@@ -61,16 +62,30 @@ RestartGame_Init() {
     Logger.Info("RestartGame 初始化完成 (模式=" g_RestartGame_Mode ")")
 }
 
-RestartGame_Start() {
+RestartGame_Start(workMode := "") {
     global g_RestartGame_Enabled, g_RestartGame_LoopCount, g_RestartGame_RetryCount, g_RestartGame_Mode
     global g_RoomCreation_Step, g_RoomCreation_Retries, g_UnknownCount
+    global g_RestartGame_WorkMode
+    global g_AutoFarm_Enabled, g_AutoFarmMulti_Enabled, g_AutoMatch_Enabled
+    if (workMode == "") {
+        workMode := RestartGamePolicy.DetectWorkMode(
+            g_AutoFarm_Enabled, g_AutoFarmMulti_Enabled, g_AutoMatch_Enabled)
+    }
+    g_RestartGame_WorkMode := RestartGamePolicy.NormalizeWorkMode(workMode)
+    ; 自动模块保持 Enabled 和计数，仅清理旧战斗状态/异步输入。
+    if (g_AutoFarm_Enabled)
+        AutoFarm_PrepareForRestart()
+    if (g_AutoFarmMulti_Enabled)
+        AutoFarmMulti_PrepareForRestart()
+    if (g_AutoMatch_Enabled)
+        AutoMatch_PrepareForRestart()
     g_RestartGame_Enabled := true
     g_RestartGame_LoopCount := 0
     g_RestartGame_RetryCount := 0
     g_RoomCreation_Step := 0
     g_RoomCreation_Retries := 0
     g_UnknownCount := 0
-    RestartGame_PhaseStart("杀进程+启动+登录+建房")
+    RestartGame_PhaseStart("杀进程+启动+登录+建房 [" RestartGamePolicy.WorkModeLabel(g_RestartGame_WorkMode) "]")
     RestartGame_Transition("KILLING_PROCESS")
     return true
 }
@@ -211,7 +226,21 @@ RestartGame_DoWaitStabilize() {
 
 ; === LOGGING_IN ===
 RestartGame_DoLogin() {
-    if (!GameUtils.DoLogin()) {
+    global g_RestartGame_WorkMode
+    global g_AutoFarm_Enabled, g_AutoFarmMulti_Enabled, g_AutoMatch_Enabled
+
+    ; RestartGame 与自动模块热键可能在相邻 Tick 内启动。
+    ; 登录前重新判定一次，避免先按 F5、后一秒按 F9 时错误创建任务房。
+    latestWorkMode := RestartGamePolicy.DetectWorkMode(
+        g_AutoFarm_Enabled, g_AutoFarmMulti_Enabled, g_AutoMatch_Enabled)
+    if (latestWorkMode != g_RestartGame_WorkMode) {
+        Logger.Info("[模式] 登录前重新判定: "
+            RestartGamePolicy.WorkModeLabel(g_RestartGame_WorkMode) " → "
+            RestartGamePolicy.WorkModeLabel(latestWorkMode))
+        g_RestartGame_WorkMode := latestWorkMode
+    }
+
+    if (!GameUtils.DoLogin(g_RestartGame_WorkMode)) {
         Logger.Error("RestartGame: 登录失败")
         RestartGame_Transition("ERROR")
         return
@@ -265,16 +294,49 @@ RestartGame_StepLog(step, action, scene, retry, elapsed := "") {
     Logger.Debug("[Step" step "-" action "] 视觉: " scene . extra . timeStr)
 }
 
+; 普通对战房的 in_room.png 容易因服务端 UI 差异漏检。
+; RoomSelfDetector 与 AutoMatch 使用同一套本人槽位检测，能直接证明已经进入对战房。
+RestartGame_DetectBattleRoom() {
+    clientRect := GameUtils.GetClientRect()
+    if (!clientRect)
+        return false
+
+    result := RoomSelfDetector.Detect(clientRect)
+    if (result.status != "OK" || result.self_slot_index <= 0)
+        return false
+    return result
+}
+
+RestartGame_MarkRoomCreated(roomResult := "") {
+    global g_RoomCreation_Step, g_RoomCreation_Retries
+
+    if (IsObject(roomResult)) {
+        Logger.Info("[Step3-完成] 房间槽位确认: 本人槽位 "
+            roomResult.self_slot_index " | 状态=" roomResult.self_state)
+        RestartGame_StepLog(3, "完成", "CREATE_ROOM → 对战房槽位 ✓", 0)
+    } else {
+        RestartGame_StepLog(3, "完成", "CREATE_ROOM → IN_ROOM ✓", 0)
+    }
+    g_RoomCreation_Step := 4
+    g_RoomCreation_Retries := 0
+}
+
 RestartGame_DoRoomCreation() {
     global g_RestartGame_LoopCount
     global g_RoomCreation_Step, g_RoomCreation_Retries, g_StepTimer, g_UnknownCount
+    global g_RestartGame_WorkMode
 
     createBtnX := ConfigManager.ReadCoord("RestartGame", "Room_CreateBtn_X", 512)
     createBtnY := ConfigManager.ReadCoord("RestartGame", "Room_CreateBtn_Y", 500)
     nameFieldX := ConfigManager.ReadCoord("RestartGame", "Room_NameField_X", 512)
     nameFieldY := ConfigManager.ReadCoord("RestartGame", "Room_NameField_Y", 500)
-    confirmBtnX := ConfigManager.ReadCoord("RestartGame", "Room_ConfirmBtn_X", 512)
-    confirmBtnY := ConfigManager.ReadCoord("RestartGame", "Room_ConfirmBtn_Y", 500)
+    if (RestartGamePolicy.ShouldSelectTask(g_RestartGame_WorkMode)) {
+        confirmBtnX := ConfigManager.ReadCoord("RestartGame", "Room_ConfirmBtn_X", 512)
+        confirmBtnY := ConfigManager.ReadCoord("RestartGame", "Room_ConfirmBtn_Y", 500)
+    } else {
+        confirmBtnX := ConfigManager.ReadCoord("RestartGame", "MatchRoom_ConfirmBtn_X", 947)
+        confirmBtnY := ConfigManager.ReadCoord("RestartGame", "MatchRoom_ConfirmBtn_Y", 985)
+    }
 
     CoordMode "Mouse", "Client"
 
@@ -312,8 +374,39 @@ RestartGame_DoRoomCreation() {
         return
     }
 
-    ; === Step 1: 选择任务 (不扫描, 直接执行) ===
+    ; === Step 1: 按工作模式设置房间类型 ===
     if (g_RoomCreation_Step == 1) {
+        ; 普通对战建房界面默认为死亡竞赛 + 随机地图。
+        ; 刷场次要求: 模式左箭头 1 次 → 个人战；地图右箭头 2 次 → 沙漠地图。
+        if (!RestartGamePolicy.ShouldSelectTask(g_RestartGame_WorkMode)) {
+            modeLeftX := ConfigManager.ReadCoord("RestartGame", "MatchRoom_ModeLeft_X", 1103)
+            modeLeftY := ConfigManager.ReadCoord("RestartGame", "MatchRoom_ModeLeft_Y", 715)
+            mapRightX := ConfigManager.ReadCoord("RestartGame", "MatchRoom_MapRight_X", 1024)
+            mapRightY := ConfigManager.ReadCoord("RestartGame", "MatchRoom_MapRight_Y", 645)
+
+            Logger.Info("[建房] 对战设置: 模式左箭头 ×1 → 个人战 ("
+                modeLeftX "," modeLeftY ")")
+            MouseMove(modeLeftX, modeLeftY)
+            Sleep(400)
+            Send "{LButton Down}"
+            Sleep(200)
+            Send "{LButton Up}"
+            Sleep(1000)
+
+            Logger.Info("[建房] 对战设置: 地图右箭头 ×2 → 沙漠地图 ("
+                mapRightX "," mapRightY ")")
+            Loop 2 {
+                MouseMove(mapRightX, mapRightY)
+                Sleep(400)
+                Send "{LButton Down}"
+                Sleep(200)
+                Send "{LButton Up}"
+                Sleep(1000)
+            }
+            RestartGame_StepLog(1, "完成", "个人战 + 沙漠地图", 0)
+            g_RoomCreation_Step := 2
+            return
+        }
         taskSelectX := ConfigManager.ReadCoord("RestartGame", "Room_TaskSelect_X", 512)
         taskSelectY := ConfigManager.ReadCoord("RestartGame", "Room_TaskSelect_Y", 500)
         RestartGame_StepLog(1, "开始", "选择任务(连点6次)", 0)
@@ -335,11 +428,15 @@ RestartGame_DoRoomCreation() {
 
     ; === Step 2: 填写房间名 (不扫描, 直接执行) ===
     if (g_RoomCreation_Step == 2) {
-        RestartGame_StepLog(2, "开始", "填写房间名", 0)
+        roomName := RestartGamePolicy.ShouldSelectTask(g_RestartGame_WorkMode)
+            ? ConfigManager.RoomName
+            : ConfigManager.MatchRoomName
+        RestartGame_StepLog(2, "开始", "填写房间名: " roomName, 0)
+        Logger.Info("[建房] 房间名: " roomName)
         g_StepTimer := A_TickCount
         MouseMove(nameFieldX, nameFieldY)
         Sleep(300), Click(), Sleep(500)
-        A_Clipboard := ConfigManager.RoomName
+        A_Clipboard := roomName
         SendInput("^a"), Sleep(200)
         SendInput("{Backspace}"), Sleep(200)
         SendInput("^v"), Sleep(300)
@@ -352,6 +449,17 @@ RestartGame_DoRoomCreation() {
 
     ; === Step 3: 点击确认 → 验证 IN_ROOM ===
     if (g_RoomCreation_Step == 3) {
+        isMatchRoom := !RestartGamePolicy.ShouldSelectTask(g_RestartGame_WorkMode)
+
+        ; 上一次点击可能已经成功。先检测槽位，防止图片漏检后继续点房间内按钮。
+        if (isMatchRoom) {
+            existingRoom := RestartGame_DetectBattleRoom()
+            if (IsObject(existingRoom)) {
+                RestartGame_MarkRoomCreated(existingRoom)
+                return
+            }
+        }
+
         g_RoomCreation_Retries++
         if (g_RoomCreation_Retries > 3) {
             Logger.Error("[Step3-失败] 点击确认 3 次未进入房间")
@@ -360,17 +468,29 @@ RestartGame_DoRoomCreation() {
         }
         RestartGame_StepLog(3, "执行", "点击确认", g_RoomCreation_Retries)
         g_StepTimer := A_TickCount
-        Loop 5 {
+
+        if (isMatchRoom) {
+            ; 普通对战房确认后界面立即切换，只点一次，避免后续点击落到房间按钮上。
             MouseMove(confirmBtnX, confirmBtnY)
-            Sleep(200), Click(), Sleep(400)
+            Sleep(300)
+            Send "{LButton Down}"
+            Sleep(200)
+            Send "{LButton Up}"
+        } else {
+            Loop 5 {
+                MouseMove(confirmBtnX, confirmBtnY)
+                Sleep(200), Click(), Sleep(400)
+            }
+            ControlClick("x" confirmBtnX " y" confirmBtnY, "ahk_exe " ConfigManager.GameExe)
         }
-        ControlClick("x" confirmBtnX " y" confirmBtnY, "ahk_exe " ConfigManager.GameExe)
         Sleep(4000)
         newScene := RestartGame_DetectScene("IN_ROOM", 3)
         if (newScene == "IN_ROOM") {
-            RestartGame_StepLog(3, "完成", "CREATE_ROOM → IN_ROOM ✓", 0)
-            g_RoomCreation_Step := 4
-            g_RoomCreation_Retries := 0
+            RestartGame_MarkRoomCreated()
+        } else if (isMatchRoom) {
+            roomResult := RestartGame_DetectBattleRoom()
+            if (IsObject(roomResult))
+                RestartGame_MarkRoomCreated(roomResult)
         }
         return
     }

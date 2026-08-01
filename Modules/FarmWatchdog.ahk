@@ -8,6 +8,27 @@ global g_FarmWatchdog_LastRunCount := -1
 global g_FarmWatchdog_StuckCount := 0
 global g_FarmWatchdog_RestartCount := 0
 
+FarmWatchdog_GetWorkMode() {
+    global g_AutoFarm_Enabled, g_AutoFarmMulti_Enabled, g_AutoMatch_Enabled
+    return RestartGamePolicy.DetectWorkMode(
+        g_AutoFarm_Enabled, g_AutoFarmMulti_Enabled, g_AutoMatch_Enabled)
+}
+
+FarmWatchdog_TriggerRestart(reason) {
+    global g_FarmWatchdog_RestartCount
+    if (!ConfigManager.IsModuleSupported("RestartGame")) {
+        Logger.Error("FarmWatchdog: 当前服务端不支持 RestartGame, 无法重启建房")
+        return false
+    }
+    workMode := FarmWatchdog_GetWorkMode()
+    Logger.Info("FarmWatchdog: " reason ", 触发" RestartGamePolicy.WorkModeLabel(workMode) "重启建房")
+    if (RestartGame_Start(workMode)) {
+        g_FarmWatchdog_RestartCount++
+        return true
+    }
+    return false
+}
+
 FarmWatchdog_Init() {
     global g_FarmWatchdog_Duration
     g_FarmWatchdog_Duration := ConfigManager.Read("FarmWatchdog", "Watch_Duration", 120)
@@ -55,16 +76,14 @@ FarmWatchdog_Tick() {
     if (!GameUtils.IsGameRunning()) {
         g_FarmWatchdog_NoGameCount++
         if (g_FarmWatchdog_NoGameCount >= g_FarmWatchdog_Duration) {
-            Logger.Info("FarmWatchdog: 游戏未运行 " g_FarmWatchdog_Duration "s, 触发重启")
             g_FarmWatchdog_NoGameCount := 0
-            ToggleModule("RestartGame")
-            g_FarmWatchdog_RestartCount++
+            FarmWatchdog_TriggerRestart("游戏未运行 " g_FarmWatchdog_Duration "s")
         }
         return
     }
     g_FarmWatchdog_NoGameCount := 0
 
-    ; --- 检测2: 局数停滞 (单人/多人任一在运行) ---
+    ; --- 检测2: 局数/场次停滞 (刷图或刷场次任一在运行) ---
     anyFarmRunning := g_AutoFarm_Enabled || g_AutoFarmMulti_Enabled || g_AutoMatch_Enabled
     if (!anyFarmRunning) {
         g_FarmWatchdog_StuckCount := 0
@@ -88,9 +107,7 @@ FarmWatchdog_Tick() {
 
     g_FarmWatchdog_StuckCount++
     if (g_FarmWatchdog_StuckCount >= g_FarmWatchdog_Duration) {
-        Logger.Info("FarmWatchdog: 局数停滞 " g_FarmWatchdog_Duration "s (当前" currentCount "局), 触发重启")
         g_FarmWatchdog_StuckCount := 0
-        ToggleModule("RestartGame")
-        g_FarmWatchdog_RestartCount++
+        FarmWatchdog_TriggerRestart("局数停滞 " g_FarmWatchdog_Duration "s (当前" currentCount "局)")
     }
 }

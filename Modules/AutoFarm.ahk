@@ -38,6 +38,18 @@ AutoFarm_Cleanup() {
     AutoFarm_Stop()
 }
 
+; 重启建房前只重置状态机，保留启用状态和已完成局数。
+AutoFarm_PrepareForRestart() {
+    global g_AutoFarm_State, g_AutoFarm_StateStart, g_AutoFarm_CombatStart
+    global g_AutoFarm_LastFoundX, g_AutoFarm_LastFoundY, g_AutoFarm_CacheMissCount
+    g_AutoFarm_State := "WAIT_START"
+    g_AutoFarm_StateStart := A_TickCount
+    g_AutoFarm_CombatStart := 0
+    g_AutoFarm_LastFoundX := -1
+    g_AutoFarm_LastFoundY := -1
+    g_AutoFarm_CacheMissCount := 0
+}
+
 ; 智能搜索: 优先搜索上次命中位置附近(±60px), 未命中再搜全区域
 AutoFarm_SmartSearch(&fx, &fy, imgPath, x1, y1, x2, y2, cacheSize := 60) {
     global g_AutoFarm_LastFoundX, g_AutoFarm_LastFoundY, g_AutoFarm_CacheMissCount
@@ -63,12 +75,12 @@ AutoFarm_SmartSearch(&fx, &fy, imgPath, x1, y1, x2, y2, cacheSize := 60) {
 }
 
 AutoFarm_Tick() {
-    global g_AutoFarm_Enabled, g_AutoFarm_State, g_AutoFarm_StateStart
+    global g_AutoFarm_Enabled, g_AutoFarm_State, g_AutoFarm_StateStart, g_RestartGame_Enabled
     global g_AutoFarm_RunCount, g_AutoFarm_CombatStart
     global g_AutoFarm_LastFoundX, g_AutoFarm_LastFoundY, g_AutoFarm_CacheMissCount
     static s_PrevState := ""
 
-    if (!g_AutoFarm_Enabled || !GameUtils.IsGameRunning())
+    if (!g_AutoFarm_Enabled || g_RestartGame_Enabled || !GameUtils.IsGameRunning())
         return
 
     rect := GameUtils.GetWindowRect()
