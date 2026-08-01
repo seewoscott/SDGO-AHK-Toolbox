@@ -143,7 +143,7 @@ class AutoMatchPrimaryRunner {
 
 class AutoMatchSweepRunner {
     static CreateState() {
-        return {active: false, step: 0, x: 0, y: 0}
+        return {active: false, step: 0, x: 0, y: 0, position_initialized: false}
     }
 
     static Begin(state, actions, lockWeaponKey) {
@@ -152,11 +152,14 @@ class AutoMatchSweepRunner {
             return false
         if (!actions.SelectWeapon(lockWeaponKey))
             return false
-        actions.RightButtonDown()
+        actions.RightButtonUp()
         actions.Delay(AutoMatchLockSweep.InitialDelayMs)
-        position := actions.GetMousePosition()
-        state.x := position.x
-        state.y := position.y
+        if (!state.position_initialized) {
+            position := actions.GetMousePosition()
+            state.x := position.x
+            state.y := position.y
+            state.position_initialized := true
+        }
         state.step := 0
         state.active := true
         actions.StartTimer(AutoMatchLockSweep.IntervalMs)
@@ -174,7 +177,7 @@ class AutoMatchSweepRunner {
 
         actions.StopTimer()
         state.active := false
-        actions.RightButtonUp()
+        actions.RightButtonDown()
         return true
     }
 
@@ -183,5 +186,12 @@ class AutoMatchSweepRunner {
         if (state.active)
             actions.RightButtonUp()
         state.active := false
+    }
+
+    static ResetPosition(state) {
+        state.x := 0
+        state.y := 0
+        state.step := 0
+        state.position_initialized := false
     }
 }

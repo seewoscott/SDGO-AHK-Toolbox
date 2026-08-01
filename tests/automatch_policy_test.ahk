@@ -82,7 +82,7 @@ AutoMatchSweepRunner.Begin(sweep, actions, "2")
 AssertEqual(actions.events[1], "stop_timer", "begin cancels old timer")
 AssertEqual(actions.events[2], "activate", "activate before weapon")
 AssertEqual(actions.events[3], "weapon:2", "select weapon two")
-AssertEqual(actions.events[4], "right_down", "right down before movement")
+AssertEqual(actions.events[4], "right_up", "release right button before movement")
 AssertEqual(actions.events[5], "delay:30", "initial delay")
 AssertEqual(actions.events[6], "get_position", "record mouse position")
 AssertEqual(actions.events[7], "start_timer:50", "start 50ms timer")
@@ -96,8 +96,26 @@ Loop 20 {
 }
 AssertEqual(actions.moves[20].x, 140, "sweep total displacement")
 AssertEqual(actions.events[actions.events.Length - 1], "stop_timer", "completion stops timer first")
-AssertEqual(actions.events[actions.events.Length], "right_up", "completion releases right button")
+AssertEqual(actions.events[actions.events.Length], "right_down", "completion holds right button")
 AssertEqual(sweep.active, false, "completed sweep inactive")
+AssertEqual(actions.getPositionCount, 1, "first sweep records mouse position once")
+
+actions.x := 500, actions.y := 600
+AutoMatchSweepRunner.Begin(sweep, actions, "2")
+Loop AutoMatchLockSweep.StepCount
+    AutoMatchSweepRunner.Step(sweep, actions)
+AssertEqual(actions.getPositionCount, 1, "second sweep reuses previous endpoint")
+AssertEqual(actions.moves[21].x, 142, "second sweep starts after previous endpoint")
+AssertEqual(actions.moves[40].x, 180, "second sweep continues cumulative movement")
+AssertEqual(actions.moves[40].y, 200, "second sweep keeps original y position")
+
+AutoMatchSweepRunner.ResetPosition(sweep)
+actions.x := 300, actions.y := 400
+AutoMatchSweepRunner.Begin(sweep, actions, "2")
+AssertEqual(actions.getPositionCount, 2, "new combat records a fresh mouse position")
+AssertEqual(sweep.x, 300, "reset sweep uses fresh x position")
+AssertEqual(sweep.y, 400, "reset sweep uses fresh y position")
+AutoMatchSweepRunner.Stop(sweep, actions)
 
 activationFailureActions := SweepActionRecorder(100, 200, false)
 activationFailureSweep := AutoMatchSweepRunner.CreateState()
@@ -169,6 +187,7 @@ class SweepActionRecorder {
         this.selectOk := selectOk
         this.events := []
         this.moves := []
+        this.getPositionCount := 0
     }
 
     ActivateGame() {
@@ -187,6 +206,7 @@ class SweepActionRecorder {
 
     GetMousePosition() {
         this.events.Push("get_position")
+        this.getPositionCount++
         return {x: this.x, y: this.y}
     }
 

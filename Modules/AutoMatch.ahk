@@ -137,7 +137,9 @@ AutoMatch_ResetCombat() {
     global g_AutoMatch_PrimaryShotCount, g_AutoMatch_PrimaryStart
     global g_AutoMatch_LockFailureCount, g_AutoMatch_AttackStopped
     global g_AutoMatch_LastCombatDetection
+    global g_AutoMatch_SweepState
     AutoMatch_StopSweep()
+    AutoMatchSweepRunner.ResetPosition(g_AutoMatch_SweepState)
     AutoMatch_StopPrimaryAttack()
     g_AutoMatch_CombatSub := ""
     g_AutoMatch_CombatStart := 0
