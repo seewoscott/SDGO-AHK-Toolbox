@@ -42,6 +42,7 @@ global g_AutoMatch_OutputStart := 0
 global g_AutoMatch_PrimaryShotCount := 0
 global g_AutoMatch_PrimaryStart := 0
 global g_AutoMatch_LockFailureCount := 0
+global g_AutoMatch_LastLockedCheck := 0
 global g_AutoMatch_AttackStopped := false
 global g_AutoMatch_ResultCounted := false
 global g_AutoMatch_LastRoomDetection := 0
@@ -71,6 +72,7 @@ global g_AutoMatch_SweepActions := AutoMatchSweepActions()
 global g_AutoMatch_SweepCompletedAt := 0
 global g_AutoMatch_PrimaryState := AutoMatchPrimaryRunner.CreateState()
 global g_AutoMatch_PrimaryActions := AutoMatchPrimaryActions()
+global g_AutoMatch_CombatTimerActive := false
 
 AutoMatch_Init() {
     global g_AutoMatch_MaxRuns, g_AutoMatch_ReadyTimeout
@@ -104,6 +106,7 @@ AutoMatch_Start() {
 AutoMatch_Stop() {
     global g_AutoMatch_Enabled, g_AutoMatch_RunCount
     g_AutoMatch_Enabled := false
+    AutoMatch_StopCombatTimer()
     AutoMatch_StopSweep()
     AutoMatch_StopPrimaryAttack()
     SendInput("{LButton up}{RButton up}")
@@ -113,6 +116,18 @@ AutoMatch_Stop() {
 
 AutoMatch_Cleanup() {
     AutoMatch_Stop()
+}
+
+; 重启建房前停止异步输入并回到房间状态，保留启用状态和已完成场次。
+AutoMatch_PrepareForRestart() {
+    global g_AutoMatch_State, g_AutoMatch_StateStart
+    AutoMatch_StopSweep()
+    AutoMatch_StopPrimaryAttack()
+    SendInput("{LButton up}{RButton up}")
+    AutoMatch_ResetRoomIdentity()
+    AutoMatch_ResetCombat()
+    g_AutoMatch_State := "WAIT_START"
+    g_AutoMatch_StateStart := A_TickCount
 }
 
 AutoMatch_ResetRoomIdentity() {
@@ -135,9 +150,13 @@ AutoMatch_ResetRoomIdentity() {
 AutoMatch_ResetCombat() {
     global g_AutoMatch_CombatSub, g_AutoMatch_CombatStart, g_AutoMatch_OutputStart
     global g_AutoMatch_PrimaryShotCount, g_AutoMatch_PrimaryStart
-    global g_AutoMatch_LockFailureCount, g_AutoMatch_AttackStopped
+    global g_AutoMatch_LockFailureCount, g_AutoMatch_LastLockedCheck
+    global g_AutoMatch_AttackStopped
     global g_AutoMatch_LastCombatDetection
+    global g_AutoMatch_SweepState
+    AutoMatch_StopCombatTimer()
     AutoMatch_StopSweep()
+    AutoMatchSweepRunner.ResetPosition(g_AutoMatch_SweepState)
     AutoMatch_StopPrimaryAttack()
     g_AutoMatch_CombatSub := ""
     g_AutoMatch_CombatStart := 0
@@ -145,6 +164,7 @@ AutoMatch_ResetCombat() {
     g_AutoMatch_PrimaryShotCount := 0
     g_AutoMatch_PrimaryStart := 0
     g_AutoMatch_LockFailureCount := 0
+    g_AutoMatch_LastLockedCheck := 0
     g_AutoMatch_AttackStopped := false
     g_AutoMatch_LastCombatDetection := 0
 }
@@ -153,20 +173,22 @@ AutoMatch_Tick() {
     global g_AutoMatch_Enabled, g_AutoMatch_State, g_AutoMatch_StateStart
     global g_AutoMatch_CombatSub
     global g_AutoMatch_OutputStart, g_AutoMatch_AttackDuration, g_AutoMatch_AttackStopped
+    global g_RestartGame_Enabled
     static s_GameMissingWarned := false
     static s_WindowMissingWarned := false
 
-    if (!g_AutoMatch_Enabled)
+    if (!g_AutoMatch_Enabled || g_RestartGame_Enabled)
         return
     if (!GameUtils.IsGameRunning()) {
         if (!s_GameMissingWarned) {
             Logger.Warn("[刷场次] 游戏进程未检测到, 等待中...")
             s_GameMissingWarned := true
         }
+        AutoMatch_StopCombatTimer()
         AutoMatch_StopSweep()
         AutoMatch_StopPrimaryAttack()
         SendInput("{LButton up}{RButton up}")
-        if (g_AutoMatch_State == "COMBAT" && g_AutoMatch_CombatSub == "LOCK_SWEEP")
+        if (g_AutoMatch_State == "COMBAT" && g_AutoMatch_CombatSub != "WAIT_RESULT")
             AutoMatch_SetCombatSub("SELECT_W2")
         return
     }
@@ -196,13 +218,10 @@ AutoMatch_Tick() {
             AutoMatch_EnterCombat()
 
     case "COMBAT":
-        AutoMatch_CheckOutputDeadline()
-        if (g_AutoMatch_CombatSub == "WAIT_RESULT") {
-            if (AutoMatch_CheckResultSafe(clientRect))
-                AutoMatch_EnterResult()
-            return
-        }
-        AutoMatch_TickCombat(clientRect)
+        AutoMatch_StartCombatTimer()
+        if (g_AutoMatch_CombatSub == "CHECK_TARGET")
+            AutoMatch_TickCombat(clientRect)
+        return
 
     case "RESULT":
         AutoMatch_TickResult()
@@ -352,13 +371,65 @@ AutoMatch_EnterCombat() {
     g_AutoMatch_StateStart := A_TickCount
     g_AutoMatch_CombatStart := A_TickCount
     AutoMatch_SetCombatSub("SELECT_W2")
+    AutoMatch_StartCombatTimer()
+    AutoMatch_BeginLockSweep()
     Logger.Info("[刷场次] 检测到战斗 UI, 进入双武器循环")
+}
+
+AutoMatch_StartCombatTimer() {
+    global g_AutoMatch_CombatTimerActive
+    if (g_AutoMatch_CombatTimerActive)
+        return
+    g_AutoMatch_CombatTimerActive := true
+    SetTimer(AutoMatch_CombatTimer, AutoMatchPolicy.CombatTickIntervalMs)
+}
+
+AutoMatch_StopCombatTimer() {
+    global g_AutoMatch_CombatTimerActive
+    SetTimer(AutoMatch_CombatTimer, 0)
+    g_AutoMatch_CombatTimerActive := false
+}
+
+AutoMatch_CombatTimer() {
+    global g_AutoMatch_Enabled, g_AutoMatch_State, g_AutoMatch_CombatSub
+    global g_RestartGame_Enabled
+
+    if (!g_AutoMatch_Enabled || g_RestartGame_Enabled || g_AutoMatch_State != "COMBAT") {
+        AutoMatch_StopCombatTimer()
+        AutoMatch_StopSweep()
+        AutoMatch_StopPrimaryAttack()
+        SendInput("{LButton up}{RButton up}")
+        return
+    }
+    if (!GameUtils.IsGameRunning()) {
+        AutoMatch_StopCombatTimer()
+        AutoMatch_StopSweep()
+        AutoMatch_StopPrimaryAttack()
+        SendInput("{LButton up}{RButton up}")
+        if (g_AutoMatch_CombatSub != "WAIT_RESULT")
+            AutoMatch_SetCombatSub("SELECT_W2")
+        return
+    }
+
+    clientRect := GameUtils.GetClientRect()
+    if (!clientRect)
+        return
+
+    AutoMatch_CheckOutputDeadline()
+    if (g_AutoMatch_CombatSub == "WAIT_RESULT") {
+        if (AutoMatch_CheckResultSafe(clientRect))
+            AutoMatch_EnterResult()
+        return
+    }
+    if (g_AutoMatch_CombatSub == "CHECK_TARGET")
+        return
+    AutoMatch_TickCombat(clientRect)
 }
 
 AutoMatch_TickCombat(clientRect) {
     global g_AutoMatch_CombatSub, g_AutoMatch_SweepCompletedAt
     global g_AutoMatch_PrimaryShotCount, g_AutoMatch_PrimaryStart
-    global g_AutoMatch_LockFailureCount
+    global g_AutoMatch_LockFailureCount, g_AutoMatch_LastLockedCheck
     global g_AutoMatch_LastCombatDetection
 
     switch g_AutoMatch_CombatSub {
@@ -382,6 +453,7 @@ AutoMatch_TickCombat(clientRect) {
             Logger.Info("[刷场次] 武器二已锁定目标, 进入持续攻击")
             SendInput("{RButton down}")
             g_AutoMatch_LockFailureCount := 0
+            g_AutoMatch_LastLockedCheck := A_TickCount
             AutoMatch_SetCombatSub("LOCKED_ATTACK")
         } else {
             Logger.Debug("[刷场次] 武器二未锁定或无目标, 切武器一")
@@ -392,6 +464,9 @@ AutoMatch_TickCombat(clientRect) {
         return
 
     case "LOCKED_ATTACK":
+        if (A_TickCount - g_AutoMatch_LastLockedCheck < AutoMatchPolicy.LockedCheckIntervalMs)
+            return
+        g_AutoMatch_LastLockedCheck := A_TickCount
         result := CombatTargetDetector.Detect(clientRect)
         g_AutoMatch_LastCombatDetection := result
         decision := AutoMatchPolicy.CombatDetectionDecision(result)
@@ -456,7 +531,7 @@ AutoMatch_BeginPrimaryAttack() {
     global g_AutoMatch_PrimaryState, g_AutoMatch_PrimaryActions
     SendInput("{RButton down}")
     if (!GameUtils.SendGameKeyHeld(g_AutoMatch_PrimaryWeaponKey,
-        AutoMatchPolicy.WeaponKeyHoldMs, 0, true)) {
+        AutoMatchPolicy.WeaponKeyHoldMs, AutoMatchPolicy.PrimaryWeaponSettleMs, true)) {
         AutoMatch_LogInputProblem("无法切换武器一，保持当前状态等待重试")
         return
     }
@@ -561,6 +636,7 @@ AutoMatch_CheckResult(clientRect) {
 
 AutoMatch_EnterResult() {
     global g_AutoMatch_State, g_AutoMatch_StateStart, g_AutoMatch_ResultCounted
+    AutoMatch_StopCombatTimer()
     AutoMatch_StopSweep()
     AutoMatch_StopPrimaryAttack()
     SendInput("{LButton up}{RButton up}")
@@ -613,7 +689,7 @@ AutoMatch_LogResultProblem(message) {
     global g_AutoMatch_LastResultWarn
     if (g_AutoMatch_LastResultWarn == 0
         || A_TickCount - g_AutoMatch_LastResultWarn >= 10000) {
-        Logger.Warn("[鍒峰満娆 " message)
+        Logger.Warn("[刷场次] " message)
         g_AutoMatch_LastResultWarn := A_TickCount
     }
 }
@@ -627,7 +703,7 @@ AutoMatch_CheckResultSafe(clientRect) {
     y2 := clientRect.y + Round(clientRect.h * 2 / 3)
     try {
         if (PixelSearch(&px, &py, x1, y1, x2, y2, g_AutoMatch_ResultColor, 20)) {
-            Logger.Info("[鍒峰満娆 妫€娴嬪埌缁撶畻棰滆壊 @" px "," py)
+            Logger.Info("[刷场次] 检测到结算颜色 @" px "," py)
             return true
         }
     } catch as err {

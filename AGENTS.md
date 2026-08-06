@@ -133,9 +133,6 @@ SDGO工具脚本.ahk (Hub)
 ```powershell
 # 运行脚本（双击或命令行）
 .\SDGO工具脚本.ahk
-
-# 查看实时日志
-Get-Content "Data\Logs\SDGO_*.log" -Wait -Tail 50
 ```
 
 **F12 坐标捕获**: 在任意窗口按下 F12，将鼠标所在窗口的 Client 坐标和像素颜色复制到剪贴板，同时写入日志。用于为新分辨率填写 Settings.ini 坐标。

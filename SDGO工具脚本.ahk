@@ -9,7 +9,7 @@
 
 ; --- 常量定义 ---
 global APP_NAME := "SDGO工具脚本"
-global APP_VERSION := "2.1.1"
+global APP_VERSION := "2.2.1"
 global SCRIPT_DIR := A_ScriptDir
 global g_DesktopW := 0
 global g_DesktopH := 0
@@ -23,6 +23,8 @@ global g_ResolutionProfile := ""
 #Include "Lib\CombatTargetDetector.ahk"
 #Include "Lib\RoomSelfDetector.ahk"
 #Include "Lib\AutoMatchPolicy.ahk"
+#Include "Lib\RestartGamePolicy.ahk"
+#Include "Lib\FarmWatchdogPolicy.ahk"
 #Include "Lib\GameUtils.ahk"
 #Include "Lib\OverlayManager.ahk"
 
@@ -267,6 +269,7 @@ BuildGui() {
     global g_Ctrl_AutoFarmMulti, g_Ctrl_AutoFarmMulti_RunCount
     global g_Ctrl_FarmWatchdog, g_Ctrl_FarmWatchdog_RestartCount
     global g_Ctrl_AutoMatch, g_Ctrl_AutoMatch_RunCount, g_AutoMatch_MaxRuns
+    global g_FarmWatchdog_FarmStallDuration, g_FarmWatchdog_MatchStallDuration
     global g_AllModuleControls, g_AllSettingsControls
 
     g_Gui := Gui("+Resize +MinSize500x400 +MaximizeBox", APP_NAME " v" APP_VERSION " — " ConfigManager.ServerDisplayName)
@@ -294,7 +297,7 @@ BuildGui() {
 
     ; 模块1: RestartGame (F5)
     gb3 := g_Gui.Add("GroupBox", "x20 y+10 w460 h70", "重启建房 (RestartGame)  [F5]")
-    desc3 := g_Gui.Add("Text", "xp+20 yp+25 w250", "重启游戏 → 登录 → 创建任务房间")
+    desc3 := g_Gui.Add("Text", "xp+20 yp+25 w280", "重启游戏 → 按刷图/场次进入对应频道并建房")
     btnRestart := g_Gui.Add("Button", "x380 yp-5 w80 h28 vBtnRestart", "启动")
     btnRestart.OnEvent("Click", (*) => ToggleModule("RestartGame"))
     g_Ctrl_RestartGame := btnRestart
@@ -302,7 +305,7 @@ BuildGui() {
 
     ; 模块2: FarmWatchdog (F6)
     gb4 := g_Gui.Add("GroupBox", "x20 y+10 w460 h70", "看门狗 (FarmWatchdog)  [F6]")
-    desc4 := g_Gui.Add("Text", "xp+20 yp+25 w200", "刷图停滞/游戏缺失 → 触发重启建房")
+    desc4 := g_Gui.Add("Text", "xp+20 yp+25 w240", "刷图/场次停滞或游戏缺失 → 重启建房")
     restartCountW := g_Gui.Add("Text", "x300 yp-5 w70 vTxtRestartCountW", "重启: 0")
     g_Ctrl_FarmWatchdog_RestartCount := restartCountW
     btnWatch := g_Gui.Add("Button", "x380 yp-5 w80 h28 vBtnWatch", "启动")
@@ -377,10 +380,16 @@ BuildGui() {
         }
     }
 
-    wdText := g_Gui.Add("Text", "x40 y+10 w120", "触发看门狗持续(秒):")
-    editWD := g_Gui.Add("Edit", "x+10 w50 vEditWatchDuration", g_FarmWatchdog_Duration)
-    editWD.OnEvent("Change", (*) => SaveSettings())
-    g_AllSettingsControls["FarmWatchdog"] := [wdText, editWD]
+    wdFarmText := g_Gui.Add("Text", "x40 y+10 w150", "刷图停滞阈值(秒):")
+    editWDFarm := g_Gui.Add("Edit", "x+10 w70 Number vEditFarmStallDuration", g_FarmWatchdog_FarmStallDuration)
+    spinWDFarm := g_Gui.Add("UpDown", "Range1-86400", g_FarmWatchdog_FarmStallDuration)
+    editWDFarm.OnEvent("Change", (*) => SaveSettings())
+    wdMatchText := g_Gui.Add("Text", "x40 y+8 w150", "刷场次停滞阈值(秒):")
+    editWDMatch := g_Gui.Add("Edit", "x+10 w70 Number vEditMatchStallDuration", g_FarmWatchdog_MatchStallDuration)
+    spinWDMatch := g_Gui.Add("UpDown", "Range1-86400", g_FarmWatchdog_MatchStallDuration)
+    editWDMatch.OnEvent("Change", (*) => SaveSettings())
+    g_AllSettingsControls["FarmWatchdog"] := [
+        wdFarmText, editWDFarm, spinWDFarm, wdMatchText, editWDMatch, spinWDMatch]
 
     ; ===== 选项卡3: 日志 =====
     g_Tab.UseTab(3)
@@ -428,7 +437,7 @@ GetLogLevelIndex() {
 ; --- 保存设置 ---
 SaveSettings() {
     global g_Gui, g_AutoFarm_MaxRuns
-    global g_FarmWatchdog_Duration
+    global g_FarmWatchdog_FarmStallDuration, g_FarmWatchdog_MatchStallDuration
 
     saved := g_Gui.Submit(0)
 
@@ -438,10 +447,16 @@ SaveSettings() {
         Logger.g_LogLevel := saved.DdlLogLevel
     }
 
-    ; 保存看门狗持续秒数
-    if (saved.HasProp("EditWatchDuration") && saved.EditWatchDuration != "") {
-        ConfigManager.Write("FarmWatchdog", "Watch_Duration", saved.EditWatchDuration)
-        g_FarmWatchdog_Duration := Integer(saved.EditWatchDuration)
+    ; Number 编辑框限制非数字输入；空值编辑中不保存，0 等非正整数也不生效。
+    if (saved.HasProp("EditFarmStallDuration")
+        && RegExMatch(saved.EditFarmStallDuration, "^[1-9]\d*$")) {
+        g_FarmWatchdog_FarmStallDuration := Integer(saved.EditFarmStallDuration)
+        ConfigManager.Write("FarmWatchdog", "Farm_Stall_Duration", g_FarmWatchdog_FarmStallDuration)
+    }
+    if (saved.HasProp("EditMatchStallDuration")
+        && RegExMatch(saved.EditMatchStallDuration, "^[1-9]\d*$")) {
+        g_FarmWatchdog_MatchStallDuration := Integer(saved.EditMatchStallDuration)
+        ConfigManager.Write("FarmWatchdog", "Match_Stall_Duration", g_FarmWatchdog_MatchStallDuration)
     }
 }
 
@@ -535,7 +550,7 @@ UpdateGuiStatus() {
         if (g_AutoFarm_Enabled)
             parts.Push("刷图:ON")
         if (g_RestartGame_Enabled)
-            parts.Push("重启建房:ON")
+            parts.Push("重启建房:" RestartGamePolicy.WorkModeLabel(g_RestartGame_WorkMode))
         if (g_AutoFarmMulti_Enabled)
             parts.Push("刷图多人:ON")
         if (g_FarmWatchdog_Enabled)

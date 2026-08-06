@@ -2,17 +2,20 @@
 
 class AutoMatchLockSweep {
     static InitialDelayMs := 30
-    static IntervalMs := 50
-    static StepCount := 20
-    static DeltaX := 2
+    static IntervalMs := 10
+    static StepCount := 10
+    static DeltaX := 4
     static SettleMs := 30
 }
 
 class AutoMatchPolicy {
+    static CombatTickIntervalMs := 200
+    static LockedCheckIntervalMs := 1000
     static RoomConfirmFrames := 3
     static LockLossFrames := 3
     static RoomKeyHoldMs := 50
     static WeaponKeyHoldMs := 50
+    static PrimaryWeaponSettleMs := 200
     static MasterInterKeyDelayMs := 100
     static PrimaryShotOffsets := [0]
     static ResultCountDelayMs := 1500
@@ -106,7 +109,7 @@ class AutoMatchRoomIdentityTracker {
 }
 
 class AutoMatchPrimaryRunner {
-    static IntervalMs := 3000
+    static RecoveryMs := 3000
 
     static CreateState() {
         return {active: false, shot_count: 0}
@@ -116,34 +119,47 @@ class AutoMatchPrimaryRunner {
         this.Stop(state, actions)
         state.active := true
         state.shot_count := 0
-        actions.Fire()
-        state.shot_count++
-        actions.StartTimer(this.IntervalMs)
+        if (AutoMatchPolicy.PrimaryShotOffsets.Length > 0) {
+            actions.Fire()
+            state.shot_count++
+        }
+        this.ScheduleNext(state, actions)
     }
 
     static Step(state, actions) {
         if (!state.active)
             return false
-        actions.Fire()
-        state.shot_count++
-        if (state.shot_count >= AutoMatchPolicy.PrimaryShotOffsets.Length) {
-            actions.StopTimer()
-            state.active := false
-            return true
+        if (state.shot_count < AutoMatchPolicy.PrimaryShotOffsets.Length) {
+            actions.Fire()
+            state.shot_count++
+            this.ScheduleNext(state, actions)
+            return false
         }
-        actions.StartTimer(this.IntervalMs)
-        return false
+        actions.StopTimer()
+        state.active := false
+        return true
     }
 
     static Stop(state, actions) {
         actions.StopTimer()
         state.active := false
     }
+
+    static ScheduleNext(state, actions) {
+        if (state.shot_count >= AutoMatchPolicy.PrimaryShotOffsets.Length) {
+            actions.StartTimer(this.RecoveryMs)
+            return
+        }
+        previousOffset := state.shot_count > 0
+            ? AutoMatchPolicy.PrimaryShotOffsets[state.shot_count] : 0
+        nextOffset := AutoMatchPolicy.PrimaryShotOffsets[state.shot_count + 1]
+        actions.StartTimer(Max(1, nextOffset - previousOffset))
+    }
 }
 
 class AutoMatchSweepRunner {
     static CreateState() {
-        return {active: false, step: 0, x: 0, y: 0}
+        return {active: false, step: 0, x: 0, y: 0, position_initialized: false}
     }
 
     static Begin(state, actions, lockWeaponKey) {
@@ -152,11 +168,14 @@ class AutoMatchSweepRunner {
             return false
         if (!actions.SelectWeapon(lockWeaponKey))
             return false
-        actions.RightButtonDown()
+        actions.RightButtonUp()
         actions.Delay(AutoMatchLockSweep.InitialDelayMs)
-        position := actions.GetMousePosition()
-        state.x := position.x
-        state.y := position.y
+        if (!state.position_initialized) {
+            position := actions.GetMousePosition()
+            state.x := position.x
+            state.y := position.y
+            state.position_initialized := true
+        }
         state.step := 0
         state.active := true
         actions.StartTimer(AutoMatchLockSweep.IntervalMs)
@@ -174,7 +193,7 @@ class AutoMatchSweepRunner {
 
         actions.StopTimer()
         state.active := false
-        actions.RightButtonUp()
+        actions.RightButtonDown()
         return true
     }
 
@@ -183,5 +202,12 @@ class AutoMatchSweepRunner {
         if (state.active)
             actions.RightButtonUp()
         state.active := false
+    }
+
+    static ResetPosition(state) {
+        state.x := 0
+        state.y := 0
+        state.step := 0
+        state.position_initialized := false
     }
 }

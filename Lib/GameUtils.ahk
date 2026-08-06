@@ -289,7 +289,7 @@ class GameUtils {
     ; 执行标准登录流程
     ; 使用 ControlSend 后台输入, 不要求窗口激活 (D3D9 游戏兼容)
     ; 返回 true/false
-    static DoLogin() {
+    static DoLogin(workMode := "FARM") {
         hGame := "ahk_exe " ConfigManager.GameExe
         phaseStart := A_TickCount
 
@@ -323,7 +323,7 @@ class GameUtils {
         MouseMove(confirmX, confirmY)
         Sleep(500)
         Send "{LButton Down}"
-        Sleep(200)
+        Sleep(500)
         Send "{LButton Up}"
         Sleep(500)
 
@@ -351,13 +351,9 @@ class GameUtils {
         CoordMode "Mouse", "Client"
         MouseMove(chanTaskX, chanTaskY)
         Sleep(500)
-        Loop 5 {
-            Send "{LButton Down}"
-            Sleep(200)
-            Send "{LButton Up}"
-            Sleep(800)
-        }
-        ControlClick("x" chanTaskX " y" chanTaskY, "ahk_exe " ConfigManager.GameExe)
+        Send "{LButton Down}"
+        Sleep(250)
+        Send "{LButton Up}"
 
         ; 验证: 进入频道列表
         imgCL := GameUtils.ResolveImagePath(A_ScriptDir "\Data\Images\channel_list.png")
@@ -382,33 +378,145 @@ class GameUtils {
         CoordMode "Mouse", "Client"
         MouseMove(chanSelX, chanSelY)
         Sleep(500)
-        Loop 5 {
-            Send "{LButton Down}"
-            Sleep(200)
-            Send "{LButton Up}"
-            Sleep(800)
-        }
-        ControlClick("x" chanSelX " y" chanSelY, "ahk_exe " ConfigManager.GameExe)
+        Send "{LButton Down}"
+        Sleep(250)
+        Send "{LButton Up}"
 
         ; 验证: 进入大厅
         imgLobby := GameUtils.ResolveImagePath(A_ScriptDir "\Data\Images\lobby.png")
         WinGetPos(&gx, &gy, &gw, &gh, "ahk_exe " ConfigManager.GameExe)
-        Loop 3 {
+        lobbyReady := false
+        Loop 4 {
             Sleep(3000)
             if (ImageSearch(&px, &py, gx, gy, gx + gw, gy + gh, "*120 " imgLobby)) {
                 Logger.Debug("[频道] 检测: 大厅 ✓")
+                lobbyReady := true
                 break
             }
-            Logger.Debug("[频道] 检测: 等待大厅 (" A_Index "/3)")
-            if (A_Index == 3) {
+            Logger.Debug("[频道] 检测: 等待大厅 (" A_Index "/4)")
+        }
+        if (!lobbyReady) {
+            ; 仅当频道列表模板仍明确存在时，再重试频道按钮一次。
+            if (ImageSearch(&px, &py, gx, gy, gx + gw, gy + gh, "*120 " imgCL)) {
+                Logger.Warn("[频道] 首次选择频道未生效，确认仍在列表，安全重试一次")
+                MouseMove(chanSelX, chanSelY)
+                Sleep(500)
+                Send "{LButton Down}"
+                Sleep(250)
+                Send "{LButton Up}"
+                Loop 4 {
+                    Sleep(3000)
+                    if (ImageSearch(&px, &py, gx, gy, gx + gw, gy + gh, "*120 " imgLobby)) {
+                        lobbyReady := true
+                        Logger.Debug("[频道] 重试后检测: 大厅 ✓")
+                        break
+                    }
+                }
+            }
+            if (!lobbyReady) {
                 Logger.Error("[频道] 未进入大厅")
                 return false
             }
         }
         Sleep(3000)
 
+        ; 刷场次必须离开任务频道，切到独立的对战频道后再建房。
+        if (RestartGamePolicy.NeedsBattleModeSwitch(workMode)) {
+            if (!this.SwitchToBattleMode()) {
+                Logger.Error("[登录] 刷场次切换对战模式失败")
+                return false
+            }
+        }
+
         elapsed := Round((A_TickCount - phaseStart) / 1000, 1)
         Logger.Info("[登录] 完成 — 耗时 " elapsed "s")
         return this.IsGameRunning()
+    }
+
+    ; 从任务大厅使用右上角快捷入口切换到对战模式，并选择对战频道。
+    static SwitchToBattleMode() {
+        modeX := ConfigManager.ReadCoord("Login", "Channel_ModeSwitch_X", 1553)
+        modeY := ConfigManager.ReadCoord("Login", "Channel_ModeSwitch_Y", 38)
+        confirmX := ConfigManager.ReadCoord("Login", "Channel_BattleConfirm_X", 911)
+        confirmY := ConfigManager.ReadCoord("Login", "Channel_BattleConfirm_Y", 703)
+        chanSelX := ConfigManager.ReadCoord("Login", "Channel_Select_X", 512)
+        chanSelY := ConfigManager.ReadCoord("Login", "Channel_Select_Y", 400)
+        hGame := "ahk_exe " ConfigManager.GameExe
+
+        Logger.Info("[频道] 任务模式 → 对战模式 (" modeX "," modeY ")")
+        if (!this.ActivateGame())
+            return false
+        CoordMode "Mouse", "Client"
+        MouseMove(modeX, modeY)
+        Sleep(500)
+        Loop 3 {
+            Click()
+            Sleep(600)
+        }
+        ControlClick("x" modeX " y" modeY, hGame)
+
+        ; 切换模式后会弹出“确定要进入对战频道进行对战吗？”确认框。
+        Sleep(2000)
+        Logger.Info("[频道] 确认进入对战频道 (" confirmX "," confirmY ")")
+        MouseMove(confirmX, confirmY)
+        Sleep(500)
+        ; 确认后界面会立即切换，禁止连点，否则后续点击可能落到频道页并退回大厅。
+        Send "{LButton Down}"
+        Sleep(250)
+        Send "{LButton Up}"
+        Sleep(1500)
+
+        imgCL := this.ResolveImagePath(A_ScriptDir "\Data\Images\channel_list.png")
+        imgLobby := this.ResolveImagePath(A_ScriptDir "\Data\Images\lobby.png")
+        WinGetPos(&gx, &gy, &gw, &gh, hGame)
+        battleEntry := ""
+        if (ConfigManager.ReadServer("BattleDirectLobby", false)) {
+            ; OC 亚服确认后沿用当前频道等级并直接进入对战大厅。
+            ; 不搜索不存在的频道列表模板，避免高分辨率全屏 ImageSearch 长时间阻塞。
+            Sleep(5000)
+            battleEntry := "LOBBY"
+        } else {
+            Loop 4 {
+                Sleep(2500)
+                if (ImageSearch(&px, &py, gx, gy, gx + gw, gy + gh, "*120 " imgCL)) {
+                    battleEntry := "CHANNEL_LIST"
+                    break
+                }
+                if (ImageSearch(&px, &py, gx, gy, gx + gw, gy + gh, "*120 " imgLobby)) {
+                    battleEntry := "LOBBY"
+                    break
+                }
+                Logger.Debug("[频道] 等待对战频道列表/大厅 (" A_Index "/4)")
+            }
+        }
+        if (battleEntry == "") {
+            Logger.Error("[频道] 点击对战模式后 10 秒内未进入频道列表或大厅")
+            return false
+        }
+
+        if (battleEntry == "CHANNEL_LIST") {
+            Logger.Info("[频道] 已进入对战频道列表, 选择初级频道1 (" chanSelX "," chanSelY ")")
+            MouseMove(chanSelX, chanSelY)
+            Sleep(500)
+            Loop 3 {
+                Click()
+                Sleep(600)
+            }
+            ControlClick("x" chanSelX " y" chanSelY, hGame)
+            Sleep(5000)
+        } else {
+            Logger.Info("[频道] 服务端已直接进入对战大厅 (沿用当前频道等级)")
+        }
+
+        WinGetPos(&gx, &gy, &gw, &gh, hGame)
+        Loop 3 {
+            if (ImageSearch(&px, &py, gx, gy, gx + gw, gy + gh, "*120 " imgLobby)) {
+                Logger.Info("[频道] 已选择对战频道并进入大厅 ✓")
+                return true
+            }
+            Sleep(3000)
+        }
+        Logger.Error("[频道] 切换后未检测到对战大厅")
+        return false
     }
 }
