@@ -106,7 +106,7 @@ AutoFarm_Tick() {
 
     case "WAIT_LOAD":
         ; 搜右上区域: combat_ui.png
-        if (AutoFarm_SmartSearch(&fx, &fy, "*90 " GameUtils.ResolveImagePath(A_ScriptDir "\Data\Images\combat_ui.png"), gx + gw*3/4, gy, gx + gw, gy + gh/4)) {
+        if (AutoFarm_SmartSearch(&fx, &fy, "*120 " GameUtils.ResolveImagePath(A_ScriptDir "\Data\Images\combat_ui.png"), gx + gw*3/4, gy, gx + gw, gy + gh/4)) {
             Logger.Debug("[单人] 检测到战斗UI, 开始输出")
             Sleep(800)
             g_AutoFarm_State := "COMBAT"

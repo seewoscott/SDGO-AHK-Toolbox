@@ -13,6 +13,7 @@ global g_RestartGame_LoopDelay := 30000
 global g_RestartGame_GamePath := ConfigManager.GamePath
 global g_RestartGame_GameDir := ConfigManager.GameDir
 global g_RestartGame_WorkMode := RestartGamePolicy.FarmMode
+global g_RestartGame_StopGeneration := 0
 
 global RESTART_STATE := Map(
     "IDLE", 0, "KILLING_PROCESS", 1, "LAUNCHING_GAME", 2,
@@ -92,6 +93,8 @@ RestartGame_Start(workMode := "") {
 
 RestartGame_Stop() {
     global g_RestartGame_Enabled, g_RestartGame_State, g_RestartGame_LoopCount
+    global g_RestartGame_StopGeneration
+    g_RestartGame_StopGeneration++
     g_RestartGame_Enabled := false
     g_RestartGame_State := "IDLE"
     Logger.Info("RestartGame: 已停止")
@@ -194,12 +197,21 @@ RestartGame_DoLaunchGame() {
     btnY := ConfigManager.ReadCoord("RestartGame", "Launcher_Button_Y", 997)
     hLauncher := WinExist("ahk_exe " ConfigManager.LauncherExe)
     if (hLauncher) {
+        ; 1920 桌面 + 高 DPI 时启动器可能被系统放到可视区边缘。
+        ; 先移到主屏左上角执行前台点击，再用 ControlClick 作为后台兜底。
+        try WinMove(0, 0, , , "ahk_id " hLauncher)
         WinActivate(hLauncher)
         WinWaitActive(hLauncher, , 3)
         Sleep(500)
         CoordMode "Mouse", "Client"
         Loop 3 {
-            Click(btnX, btnY)
+            if (!WinExist("ahk_id " hLauncher))
+                break
+            try Click(btnX, btnY)
+            Sleep(300)
+            if (!WinExist("ahk_id " hLauncher))
+                break
+            try ControlClick("x" btnX " y" btnY, "ahk_id " hLauncher)
             Sleep(800)
         }
     }
@@ -261,29 +273,44 @@ global g_StepTimer := 0
 global g_UnknownCount := 0
 
 RestartGame_DetectScene(target := "", retries := 1) {
-    WinGetPos(&wx, &wy, &ww, &wh, "ahk_exe " ConfigManager.GameExe)
-    if (wx == "" || ww == 0) {
-        Logger.Info("[检测] WinGetPos 失败, wx=" wx " ww=" ww)
-        return "UNKNOWN"
-    }
-    Loop retries {
-        for state, imgPath in ROOM_IMAGES {
-            ; 如果指定了 target, 只搜这一张
-            if (target != "" && state != target)
-                continue
-            resolvedPath := GameUtils.ResolveImagePath(imgPath)
-            if (!FileExist(resolvedPath))
-                continue
-            if (ImageSearch(&px, &py, wx, wy, wx + ww, wy + wh, "*120 " resolvedPath)) {
-                if (retries > 1 && A_Index > 1)
-                    Logger.Debug("[检测] " state " ✓ (第" A_Index "次)")
-                return state
+    hGame := 0
+    try {
+        hGame := WinExist("ahk_exe " ConfigManager.GameExe)
+        if (!hGame) {
+            Logger.Warn("[检测] 游戏窗口不存在, 返回 UNKNOWN")
+            return "UNKNOWN"
+        }
+
+        wx := "", wy := "", ww := "", wh := ""
+        WinGetPos(&wx, &wy, &ww, &wh, "ahk_id " hGame)
+        if (wx == "" || ww == 0 || wh == 0) {
+            Logger.Warn("[检测] WinGetPos 失败, 返回 UNKNOWN")
+            return "UNKNOWN"
+        }
+
+        Loop retries {
+            for state, imgPath in ROOM_IMAGES {
+                ; 如果指定了 target, 只搜这一张
+                if (target != "" && state != target)
+                    continue
+                resolvedPath := GameUtils.ResolveImagePath(imgPath)
+                if (!FileExist(resolvedPath))
+                    continue
+                if (ImageSearch(&px, &py, wx, wy, wx + ww, wy + wh,
+                    "*120 " resolvedPath)) {
+                    if (retries > 1 && A_Index > 1)
+                        Logger.Debug("[检测] " state " ✓ (第" A_Index "次)")
+                    return state
+                }
+            }
+            if (retries > 1) {
+                Logger.Debug("[检测] " target " 失败 (第" A_Index "/" retries "次)")
+                Sleep(500)
             }
         }
-        if (retries > 1) {
-            Logger.Debug("[检测] " target " 失败 (第" A_Index "/" retries "次)")
-            Sleep(500)
-        }
+    } catch as err {
+        Logger.Warn("[检测] 场景识别异常, 返回 UNKNOWN: " err.Message)
+        return "UNKNOWN"
     }
     return "UNKNOWN"
 }

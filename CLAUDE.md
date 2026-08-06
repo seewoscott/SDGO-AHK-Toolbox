@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 SDGO工具脚本 — 基于 **AutoHotkey v2** 的 SD高达私服（SDGO UNION 1.4.3）游戏自动化工具箱。通过 GUI 控制面板管理多个自动化模块（刷图、建房、看门狗等），每个模块以独立的状态机运行，由主脚本每秒轮询驱动。
 
-**要求**: AutoHotkey v2.0+，Windows，管理员权限（用于 taskkill 杀进程）。**没有构建系统、测试框架或 CI/CD** — 所有验证都是手动的。
+**要求**: AutoHotkey v2.0+，Windows，管理员权限（用于 taskkill 杀进程）。没有构建系统或 CI/CD。策略层（`Lib/*Policy.ahk`）有 `tests/` 下的单元测试；模块状态机、图像检测、键鼠输入等行为仍需手动验证。
 
 ## 架构总览
 
@@ -21,6 +21,8 @@ SDGO工具脚本.ahk (Hub)
   ├── #Include → Lib/CombatTargetDetector.ahk (敌方标记检测)
   ├── #Include → Lib/RoomSelfDetector.ahk     (房间 12 槽状态检测)
   ├── #Include → Lib/AutoMatchPolicy.ahk      (AutoMatch 时序/策略类)
+  ├── #Include → Lib/RestartGamePolicy.ahk    (重启建房工作模式纯规则)
+  ├── #Include → Lib/FarmWatchdogPolicy.ahk   (看门狗监控源/阈值纯规则)
   ├── #Include → Lib/GameUtils.ahk            (游戏窗口交互中枢)
   ├── #Include → Lib/OverlayManager.ahk       (透明覆盖层)
   │
@@ -33,7 +35,7 @@ SDGO工具脚本.ahk (Hub)
   └── Modules/ScreenWatcher.ahk (异常画面监控, 未被 #Include, 独立运行)
 ```
 
-**包含顺序**: ConfigManager → Logger → ScreenCapture → TargetLockDetector → CombatTargetDetector → RoomSelfDetector → GameUtils → 各功能模块。ScreenWatcher 独立于主脚本，需要时可通过 INI 开关或单独启动。
+**包含顺序**: ConfigManager → Logger → ScreenCapture → TargetLockDetector → CombatTargetDetector → RoomSelfDetector → AutoMatchPolicy → RestartGamePolicy → FarmWatchdogPolicy → GameUtils → 各功能模块。ScreenWatcher 独立于主脚本，需要时可通过 INI 开关或单独启动。
 
 **运行时模型**: `SetTimer(GuiTick, 1000)` 每秒调用所有已加载模块的 `_Tick()`。每个模块在 Tick 内做像素/图像检测、状态判断和键鼠操作。
 
@@ -49,9 +51,12 @@ SDGO工具脚本.ahk (Hub)
 | `Lib/CombatTargetDetector.ahk` | 红色敌方标记检测 → `{presence, count}` + 锁定状态 |
 | `Lib/RoomSelfDetector.ahk` | 房间 12 槽状态检测 (EMPTY/MASTER/READY/NOT_READY) + 自身槽识别 |
 | `Lib/AutoMatchPolicy.ahk` | AutoMatch 子模块：策略/扫动/主攻/身份追踪类 |
+| `Lib/RestartGamePolicy.ahk` | 静态类，重启建房工作模式 (FARM/MATCH) 纯规则 |
+| `Lib/FarmWatchdogPolicy.ahk` | 静态类，看门狗监控源/阈值纯规则 |
 | `Lib/OverlayManager.ahk` | 透明覆盖层 GUI，显示房间/战斗/AutoMatch 状态 |
 | `Lib/GameUtils.ahk` | 静态类，游戏窗口交互中枢 — 窗口检测、ControlSend/Send 按键、ControlClick 鼠标、PixelSearch/ImageSearch、DoLogin() 登录流程 |
 | `Modules/*.ahk` | 功能模块，统一接口（见下文） |
+| `tests/*.ahk` | 策略层单元测试（见"测试"节） |
 | `Data/Images/*.png` | 图像模板 — 用于 ImageSearch 检测游戏画面状态 |
 | `Data/Logs/` | 日志输出目录，文件名格式 `SDGO_yyyyMMdd_HHmmss.log` |
 | `Data/Settings.ini` | 用户配置文件 |
@@ -139,12 +144,12 @@ RestartGame_Transition(newState) {
 | `ResolveImagePath(baseName)` | 4-tier 回退：先查 `服务器名_文件名`、`文件名_分辨率`、`文件名`，最后原路径 |
 | `SendGameKeyHeld(key, holdMs, delay, forceForeground)` | 按下→保持 holdMs 毫秒→抬起；用于 D3D9 接口不支持瞬时按键的场景 |
 | `CheckLogFile(pattern, gameDir)` | 在 `zoG_log` 目录的最新日志中搜索字符串 |
-| `DoLogin()` | 完整四阶段登录流程 |
+| `DoLogin(workMode := "FARM")` | 四阶段登录流程；FARM 模式登录后选任务，MATCH 模式切换对战模式 |
 | `WaitFor(conditionFunc, timeoutMs:=5000, checkIntervalMs:=200)` | 轮询等待辅助 |
 
 **图像搜索**: `ImageSearch()` 在 D3D9 窗口上兼容性有限，各模块通常使用 `*90~*120` 的容差变体。`PixelSearch()` 更可靠，但同样需要窗口在前景。
 
-**Login 流程** (`DoLogin()`): 四阶段 — 输入密码 → 确认按钮 → 频道选择 (PixelSearch 0x071940) → 频道列表验证 (ImageSearch `channel_list.png`) → 选择初级频道1 → 大厅验证 (ImageSearch `lobby.png`)。
+**Login 流程** (`DoLogin(workMode)`): 四阶段 — 输入密码 → 确认按钮 → 频道选择 (PixelSearch 0x071940) → 频道列表验证 (ImageSearch `channel_list.png`) → 选择初级频道1 → 大厅验证 (ImageSearch `lobby.png`)。workMode 决定大厅后的动作：FARM=选任务，MATCH=切换对战模式。
 
 ## 检测器工具 (Detectors)
 
@@ -184,11 +189,19 @@ RestartGame_Transition(newState) {
 
 **关键方法**: `Init()` → `Tick()`（每秒由 GuiTick 调用）→ `AutoShow()/AutoHide()`（模块调用控制显隐）→ `Toggle()`（F10 热键）→ `Cleanup()`
 
-## AutoMatchPolicy.ahk — AutoMatch 策略层
+## 策略层 (Lib/*Policy.ahk)
 
-**文件**: `Lib/AutoMatchPolicy.ahk`
+三个 `*Policy.ahk` 文件构成 **策略层**：静态类、无状态无 I/O、只含纯决策逻辑，因此可直接被 `tests/` 单元测试（`#Include` 该文件即可，无需加载游戏模块或运行 GUI）。★ 新模块的判定规则（工作模式、阈值、优先级等）应抽成 Policy 类并配测试，不要在 Tick 内写死。
 
-定义了 4 个类 + 2 个 Action 包装类，实现 AutoMatch 战斗中的扫动/主攻/判定逻辑。采用 **策略模式**：Runner 类（纯状态机逻辑）委托 Action 类（I/O 操作），使逻辑可测试。
+| 文件 | 职责 | 关键方法 |
+|------|------|----------|
+| `AutoMatchPolicy.ahk` | AutoMatch 战斗中的扫动/主攻/判定逻辑 + 2 个 Action 包装类 | 见下方类表 |
+| `RestartGamePolicy.ahk` | 重启建房工作模式 FARM/MATCH 判定 | `DetectWorkMode()`（有刷图模块启用→FARM，仅 AutoMatch→MATCH）, `NormalizeWorkMode()`, `ShouldSelectTask()`（FARM 建房需选任务）, `NeedsBattleModeSwitch()`（MATCH 需切对战模式）, `WorkModeLabel()` |
+| `FarmWatchdogPolicy.ahk` | 看门狗监控源与阈值判定 | `ResolveSource()`（优先级 单人刷图>多人刷图>刷场次>NONE）, `IsFarmSource()`, `DurationForSource()`, `SourceLabel()`, `CountLabel()`, `NormalizeDuration()`, `IsThresholdReached()` |
+
+### AutoMatchPolicy.ahk 细节
+
+定义了 4 个类 + 2 个 Action 包装类，采用 **策略模式**：Runner 类（纯状态机逻辑）委托 Action 类（I/O 操作），使逻辑可测试。
 
 | 类 | 作用 | 关键字段/方法 |
 |----|------|-------------|
@@ -202,10 +215,25 @@ RestartGame_Transition(newState) {
 
 **SmartSearch 缓存**: AutoMatch 使用两个独立缓存 — `g_AutoMatch_SearchCache`（`start_btn.png`）和 `g_AutoMatch_CombatCache`（`combat_ui.png`）。
 
+## 测试 (tests/)
+
+`tests/` 下的脚本是策略层的单元/集成测试，用 AutoHotkey64.exe 直接运行（无需构建）：
+
+```powershell
+& 'D:\Program Files\AutoHotkey\v2\AutoHotkey64.exe' tests\farm_watchdog_policy_test.ahk
+& 'D:\Program Files\AutoHotkey\v2\AutoHotkey64.exe' tests\farm_watchdog_integration_test.ahk
+```
+
+**约定**: 退出码 0=PASS、1=FAIL；`FileAppend("...", "*")` 输出到 stdout；结尾打印 `<name>: PASS`。两种测试模式：
+- **纯策略测试**（`*_policy_test.ahk`）: 直接 `#Include ..\Lib\*.ahk` 被测类，逐条断言。
+- **集成测试**（`*_integration_test.ahk`）: 先定义 stub（Logger/GameUtils 空实现、RestartGamePolicy 简化版、`RestartGame_Start()` 桩），再 `#Include` 真实模块，用临时 INI（`ConfigManager.g_IniPath` 指向 `A_Temp` 下文件）驱动 `_Init()`/`_Tick()` 验证状态转换，`finally` 恢复原路径并删临时文件。
+
 ## 模块间协作
 
 - **`ToggleModule("ModuleName")`**: 模块间触发机制。FarmWatchdog 和 ScreenWatcher 检测到异常时调用 `ToggleModule("RestartGame")` 触发自动重启建房（ToggleModule 内部会 Start 已停用的模块或 Stop 已运行的模块）
-- **RunCount 共享**: FarmWatchdog 读取 `g_AutoFarm_RunCount`、`g_AutoFarmMulti_RunCount`、`g_AutoMatch_RunCount` 做刷图/场次停滞检测
+- **RunCount 共享**: FarmWatchdog 通过 `FarmWatchdogPolicy.ResolveSource()` 解析当前监控源（优先级 单人刷图 > 多人刷图 > 刷场次），读取对应模块的 RunCount 做停滞检测；**源切换时重置基准与累计值**（见集成测试）
+- **RestartGame 工作模式**: `RestartGame_Start()` 启动时按 `RestartGamePolicy.DetectWorkMode()` 自动判定 FARM/MATCH（有刷图模块启用→FARM，仅 AutoMatch→MATCH），登录阶段（`DoLogin` 前）还会重检一次并可在中途切换；`ShouldSelectTask()`=FARM 建房前选任务，`NeedsBattleModeSwitch()`=MATCH 需切换对战模式
+- **RestartGame 挂起看门狗**: `g_RestartGame_Enabled` 期间 FarmWatchdog 清空停滞/缺失计数并置监控源为 NONE，重启完成后再恢复
 - **图像回退**: AutoMatch 通过 `GameUtils.ResolveImagePath()` 4-tier 回退自动匹配服务端专属图像（`服务器名_` 前缀）
 - **SmartSearch**: ★ 只有 AutoMatch 使用 `GameUtils.SmartSearch()`。AutoFarm 和 AutoFarmMulti 有本地重复实现。**新模块应直接调用 `GameUtils.SmartSearch()`**，不要重新实现。
 - **ScreenWatcher**: 未被主脚本 #Include，是独立的可选模块。检测异常画面（`watch.png`）或游戏进程消失持续 `Watch_Duration` 秒（INI `[ScreenWatcher]`，默认 5）后触发重启。可通过 INI 开关或单独启动。
@@ -226,10 +254,10 @@ RestartGame_Transition(newState) {
 |----|----------|
 | `[General]` | `HotkeyModifier` (默认 `^!`=Ctrl+Alt), `EmergencyStop` (Esc), `GameExe` (gonline.exe) |
 | `[Game]` | `InputMode` (control/setforeground), `WindowWidth`/`Height`, `ServerProfile` |
-| `[RestartGame]` | `Mode` (once/loop), `MaxLoops` (0=无限), `GamePath`/`GameDir`, 导航坐标, 各阶段超时 |
+| `[RestartGame]` | `Mode` (once/loop), `MaxLoops` (0=无限), `LoopDelay`, `MaxRetries`, `GamePath`/`GameDir`, 导航坐标, 各阶段超时。工作模式不由 INI 配置，由启用模块自动判定 (FARM/MATCH) |
 | `[AutoFarm]` | `MaxRuns` (0=无限刷图) |
 | `[AutoMatch]` | `MaxRuns` (0=无限), `ReadyTimeout`, `PrimaryWeaponKey`, `LockWeaponKey`, `ResultColor` |
-| `[FarmWatchdog]` | `Watch_Duration` (停滞检测秒数, 默认 120) |
+| `[FarmWatchdog]` | `Farm_Stall_Duration` (刷图停滞阈值秒, 默认 180), `Match_Stall_Duration` (刷场次阈值秒, 默认 1200), `NoGame_Duration` (游戏缺失秒, 默认 60)。旧 `Watch_Duration` 仅作为刷图阈值的兼容回退 |
 | `[Overlay]` | `Enabled` (0/1), `Opacity` (0-100), `UpdateInterval`/`PositionInterval` (tick 数), `FontSize` |
 | `[Login]` | 登录流程坐标 (`Login_PasswordX/Y`, `Login_ConfirmX/Y`, `Channel_*`) |
 | `[Server.<Profile>]` | `Modules` (逗号分隔的模块清单), `GameExe`, `LauncherExe`, `GameDir`, `GamePath`, `LoginPassword`, `LoginChannelColor`, `LogDir` |
@@ -259,15 +287,8 @@ RestartGame_Transition(newState) {
 | `combat_ui_1920x1080.png` | AutoFarm, AutoFarmMulti, AutoMatch | 1920x1080 分辨率下的战斗 UI | *90 |
 | `end.png` | AutoFarm, AutoFarmMulti, AutoMatch | 检测战斗结束标志 | *90 |
 | `end_1920x1080.png` | AutoFarm, AutoFarmMulti, AutoMatch | 1920x1080 分辨率下的结束标志 | *90 |
-| `OC梦服_start_btn.png` | AutoMatch | 梦服开始按钮 (ServerProfile=OC_CHINA 时自动匹配) | *90 |
-| `OC梦服_start_btn_1920x1080.png` | AutoMatch | 1920x1080 分辨率下的梦服开始按钮 | *90 |
 | `OC梦服_combat_ui.png` | AutoMatch | 梦服战斗 UI (ServerProfile=OC_CHINA 时自动匹配) | *90 |
 | `OC梦服_combat_ui_1920x1080.png` | AutoMatch | 1920x1080 分辨率下的梦服战斗 UI | *90 |
-| `OC梦服_end.png` | AutoMatch | 梦服结束标志 (ServerProfile=OC_CHINA 时自动匹配) | *90 |
-| `OC亚服_start_btn.png` | AutoFarm, AutoFarmMulti, AutoMatch | 亚服开始按钮 (ServerProfile=OC_ASIA 时自动匹配) | *90 |
-| `OC亚服_start_btn_1920x1080.png` | AutoFarm, AutoFarmMulti, AutoMatch | 1920x1080 分辨率下的亚服开始按钮 | *90 |
-| `OC亚服_combat_ui.png` | AutoFarm, AutoFarmMulti, AutoMatch | 亚服战斗 UI (ServerProfile=OC_ASIA 时自动匹配) | *90 |
-| `OC亚服_combat_ui_1920x1080.png` | AutoFarm, AutoFarmMulti, AutoMatch | 1920x1080 分辨率下的亚服战斗 UI | *90 |
 | `lobby.png` | RestartGame, GameUtils | 验证已进入大厅 | *120 |
 | `lobby_1920x1080.png` | RestartGame, GameUtils | 1920x1080 分辨率下的大厅 | *120 |
 | `create_room.png` | RestartGame | 验证创建房间界面 | *120 |
@@ -276,10 +297,10 @@ RestartGame_Transition(newState) {
 | `in_room_1920x1080.png` | RestartGame | 1920x1080 分辨率下的房间内界面 | *120 |
 | `channel_list.png` | GameUtils | 验证频道列表界面 | *120 |
 | `channel_list_1920x1080.png` | GameUtils | 1920x1080 分辨率下的频道列表 | *120 |
-| `channel_select.png` | GameUtils | 频道选择画面参考 | — |
 | `member.png` | — | 未被代码引用，可能为预留 | — |
 | `member_1920x1080.png` | — | member.png 的 1920x1080 变体 | — |
-| `watch.png` | ScreenWatcher | 异常画面监控 | *120 |
+
+> 注意: `OC亚服_*`、`OC梦服_start_btn*`、`OC梦服_end*`、`channel_select.png`、`watch.png` 已从磁盘删除（未提交的删除；`watch.png` 仍被 ScreenWatcher.ahk 引用，`OC亚服_*` 对应模板缺失时该服 ImageSearch 会失败）。若恢复模板请同步更新本表。
 
 ## 开发指南
 
@@ -287,9 +308,10 @@ RestartGame_Transition(newState) {
 
 1. 创建 `Modules/NewModule.ahk`，遵循 5 函数接口：`NewModule_Init()` / `_Start()` / `_Stop()` / `_Tick()` / `_Cleanup()`
 2. 状态机使用字符串状态 + `switch` + `A_TickCount` 超时（参考 RestartGame 的 Transition 模式）
-3. 在 `SDGO工具脚本.ahk` 中添加 `#Include "Modules\NewModule.ahk"`，并在 `GuiTick()` 中调用 `NewModule_Tick()`
-4. （可选）在 `[General] Hotkeys` 中注册热键，在 `GuiCreate()` 中添加 GUI 控件
-5. 在 `Data/Settings.ini` 的对应 `[Server.*]` 节的 `Modules=` 字段中添加模块名
+3. 判定规则（工作模式、阈值、优先级等）抽成 `Lib/NewModulePolicy.ahk` 静态类，并在 `tests/` 加对应测试 — 不要写在 Tick 内
+4. 在 `SDGO工具脚本.ahk` 中添加 `#Include "Modules\NewModule.ahk"`（及 Policy 文件），并在 `GuiTick()` 中调用 `NewModule_Tick()`
+5. （可选）在 `RegisterGlobalHotkeys()` 中注册热键，在 `BuildGui()` 中添加 GUI 控件
+6. 在 `Data/Settings.ini` 的对应 `[Server.*]` 节的 `Modules=` 字段中添加模块名
 
 ### 添加新图像模板
 
@@ -313,22 +335,23 @@ RestartGame_Transition(newState) {
 ### Git 约定
 
 - 分支命名: `fix/描述`, `feature/描述`, `chore/描述`
-- 提交信息: `类型: 简短描述`（如 `fix: ReadyPixel 分辨率适配`, `chore: v1.5.5 → v1.5.6`）
+- 提交信息: `类型: 简短描述`（如 `fix: ReadyPixel 分辨率适配`, `chore: v2.1.1 → v2.2`）
 - 版本号更新: 独立 commit `chore: X.Y.Z → X.Y.W`
+
+### AGENTS.md 同步
+
+仓库根目录另有 `AGENTS.md`（给 Codex 的指引），内容与 CLAUDE.md 基本平行但更新滞后。改动架构/接口/配置节时同步更新两份文件，避免两处指引不一致。
 
 ## 调试与故障排查
 
 ```powershell
 # 运行脚本（双击或命令行）
 .\SDGO工具脚本.ahk
-
-# 查看实时日志
-Get-Content "Data\Logs\SDGO_*.log" -Wait -Tail 50
 ```
 
 **F12 坐标捕获**: 在任意窗口按下 F12，将鼠标所在窗口的 Client 坐标和像素颜色复制到剪贴板，同时写入日志。用于为新分辨率填写 Settings.ini 坐标。
 
-**验证方式**: 本项目没有自动化测试。修改后运行脚本，观察 GUI 状态变化，检查日志输出确认模块行为正确。
+**验证方式**: 策略层改动先跑 `tests/` 下对应测试（退出码 0=PASS）。模块行为（状态机、图像检测、键鼠输入）没有自动化测试 — 修改后运行脚本，观察 GUI 状态变化，检查日志输出确认行为正确。
 
 **常见问题排查**:
 1. 游戏窗口未检测到 → 确认 `gonline.exe` 进程在运行
