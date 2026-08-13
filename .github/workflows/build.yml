@@ -60,17 +60,27 @@ jobs:
           $psi.RedirectStandardError = $true
           $psi.CreateNoWindow = $true
           $compileProc = [System.Diagnostics.Process]::Start($psi)
-          $compileOut = $compileProc.StandardOutput.ReadToEndAsync()
-          $compileErr = $compileProc.StandardError.ReadToEndAsync()
+          # Read streams synchronously AFTER exit to avoid .Result races on
+          # the async tasks (an AggregateException there aborts the step with
+          # exit 1 and no visible message, which is what we saw in CI).
           if (-not $compileProc.WaitForExit(300000)) {
               try { $compileProc.Kill() } catch { }
               throw "AHK compilation timed out."
           }
-          if (-not [string]::IsNullOrWhiteSpace($compileOut.Result)) { Write-Host $compileOut.Result }
-          if (-not [string]::IsNullOrWhiteSpace($compileErr.Result)) { Write-Host $compileErr.Result }
-          if ($compileProc.ExitCode -ne 0 -or -not (Test-Path -LiteralPath (Join-Path $buildRoot "SDGO-Toolbox.exe"))) { throw "AHK compilation failed (exit $($compileProc.ExitCode))." }
+          try {
+              $compileOutText = $compileProc.StandardOutput.ReadToEnd()
+              $compileErrText = $compileProc.StandardError.ReadToEnd()
+          } catch {
+              $compileOutText = ""
+              $compileErrText = $_.Exception.Message
+          }
+          if (-not [string]::IsNullOrWhiteSpace($compileOutText)) { Write-Host $compileOutText }
+          if (-not [string]::IsNullOrWhiteSpace($compileErrText)) { Write-Host $compileErrText }
+          $builtExe = Join-Path $buildRoot "SDGO-Toolbox.exe"
+          if ($compileProc.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $builtExe)) { throw "AHK compilation failed (exit $($compileProc.ExitCode))." }
           # Ahk2Exe writes the output next to the input script; move it into the workspace.
-          Move-Item -LiteralPath (Join-Path $buildRoot "SDGO-Toolbox.exe") -Destination "SDGO-Toolbox.exe" -Force
+          Move-Item -LiteralPath $builtExe -Destination (Join-Path (Get-Location) "SDGO-Toolbox.exe") -Force
+          if (-not (Test-Path -LiteralPath "SDGO-Toolbox.exe")) { throw "Move-Item of built EXE failed." }
       - name: Create distribution manifest
         shell: powershell
         run: |
