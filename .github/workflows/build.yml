@@ -68,7 +68,9 @@ jobs:
           }
           if (-not [string]::IsNullOrWhiteSpace($compileOut.Result)) { Write-Host $compileOut.Result }
           if (-not [string]::IsNullOrWhiteSpace($compileErr.Result)) { Write-Host $compileErr.Result }
-          if ($compileProc.ExitCode -ne 0 -or -not (Test-Path -LiteralPath "SDGO-Toolbox.exe")) { throw "AHK compilation failed (exit $($compileProc.ExitCode))." }
+          if ($compileProc.ExitCode -ne 0 -or -not (Test-Path -LiteralPath (Join-Path $buildRoot "SDGO-Toolbox.exe"))) { throw "AHK compilation failed (exit $($compileProc.ExitCode))." }
+          # Ahk2Exe writes the output next to the input script; move it into the workspace.
+          Move-Item -LiteralPath (Join-Path $buildRoot "SDGO-Toolbox.exe") -Destination "SDGO-Toolbox.exe" -Force
       - name: Create distribution manifest
         shell: powershell
         run: |
