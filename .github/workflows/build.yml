@@ -1,0 +1,109 @@
+name: Build AHK to EXE
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Install AutoHotkey v2
+        shell: powershell
+        run: choco install autohotkey --version=2.0.19 -y --no-progress
+      - name: Install Ahk2Exe v2 compiler
+        shell: powershell
+        run: |
+          $release = Invoke-RestMethod -Uri "https://api.github.com/repos/AutoHotkey/Ahk2Exe/releases/latest" -Headers @{ Accept = "application/vnd.github+json" }
+          $asset = $release.assets | Where-Object { $_.name -match '^Ahk2Exe.*\.zip$' } | Select-Object -First 1
+          if ($null -eq $asset) { throw "No Ahk2Exe ZIP asset found in the latest release." }
+          $zip = Join-Path $env:RUNNER_TEMP $asset.name
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zip
+          $destination = Join-Path $env:RUNNER_TEMP "Ahk2Exe"
+          Expand-Archive -LiteralPath $zip -DestinationPath $destination -Force
+          $compiler = Get-ChildItem -LiteralPath $destination -Recurse -Filter Ahk2Exe.exe | Select-Object -First 1 -ExpandProperty FullName
+          if ([string]::IsNullOrWhiteSpace($compiler)) { throw "Ahk2Exe.exe not found after extraction." }
+          $runtime = "C:\Program Files\AutoHotkey\v2\AutoHotkey64.exe"
+          if (-not (Test-Path -LiteralPath $runtime)) { throw "AutoHotkey v2 runtime is unavailable: $runtime" }
+          "AHK2EXE_PATH=$compiler" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "AHK_RUNTIME_PATH=$runtime" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Run updater tests
+        shell: powershell
+        run: |
+          & $env:AHK_RUNTIME_PATH /ErrorStdOut ".\tests\AutoUpdaterTests.ahk"
+          if ($LASTEXITCODE -ne 0) { throw "AutoUpdater tests failed." }
+      - name: Compile AHK
+        shell: powershell
+        run: |
+          $compiler = $env:AHK2EXE_PATH
+          if (-not (Test-Path -LiteralPath $compiler)) { throw "Ahk2Exe compiler is unavailable: $compiler" }
+          # Ahk2Exe can fail when its input path contains non-ASCII characters.
+          # Compile from an ASCII-only staging directory while preserving relative
+          # #Include paths and the runtime Data directory.
+          $buildRoot = Join-Path $env:RUNNER_TEMP "sdgo-ahk-build"
+          if (Test-Path -LiteralPath $buildRoot) { Remove-Item -LiteralPath $buildRoot -Recurse -Force }
+          New-Item -ItemType Directory -Path $buildRoot | Out-Null
+          robocopy . $buildRoot /E /XD .git .github Deploy tests Data\Logs | Out-Null
+          if ($LASTEXITCODE -gt 7) { throw "Failed to stage source files for compilation." }
+          $entryScripts = @(Get-ChildItem -LiteralPath $buildRoot -File -Filter "*.ahk")
+          if ($entryScripts.Count -ne 1) { throw "Expected exactly one root AHK entry script; found $($entryScripts.Count)." }
+          Copy-Item -LiteralPath $entryScripts[0].FullName -Destination (Join-Path $buildRoot "Main.ahk")
+          & $compiler /in (Join-Path $buildRoot "Main.ahk") /out "SDGO-Toolbox.exe" /bin $env:AHK_RUNTIME_PATH
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath "SDGO-Toolbox.exe")) { throw "AHK compilation failed." }
+      - name: Create distribution manifest
+        shell: powershell
+        run: |
+          $version = "${{ github.ref_name }}" -replace '^v', ''
+          $entryScripts = @(Get-ChildItem -LiteralPath . -File -Filter "*.ahk")
+          if ($entryScripts.Count -ne 1) { throw "Expected exactly one root AHK entry script; found $($entryScripts.Count)." }
+          $source = Get-Content -LiteralPath $entryScripts[0].FullName -Raw -Encoding utf8
+          if ($source -notmatch 'global APP_VERSION := "([^"]+)"') { throw "APP_VERSION declaration was not found." }
+          if ($Matches[1] -ne $version) { throw "Tag v$version does not match APP_VERSION $($Matches[1])." }
+          $hash = (Get-FileHash -LiteralPath "SDGO-Toolbox.exe" -Algorithm SHA256).Hash.ToLowerInvariant()
+          [ordered]@{ version = $version; file_name = "SDGO-Toolbox.exe"; sha256 = $hash; updated_at = (Get-Date).ToUniversalTime().ToString("o") } |
+            ConvertTo-Json | Set-Content -LiteralPath "version.json" -Encoding utf8
+      - name: Upload distribution package
+        uses: actions/upload-artifact@v4
+        with:
+          name: lan-release-package
+          path: |
+            SDGO-Toolbox.exe
+            version.json
+          if-no-files-found: error
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            SDGO-Toolbox.exe
+            version.json
+
+  deploy-lan:
+    name: Publish to LAN share
+    needs: build
+    # Install this runner on a LAN server that can reach both GitHub and the SMB share.
+    runs-on: [self-hosted, windows, sdgo-lan]
+    environment: lan-distribution
+    steps:
+      - name: Checkout deployment scripts
+        uses: actions/checkout@v4
+      - name: Download release package
+        uses: actions/download-artifact@v4
+        with:
+          name: lan-release-package
+          path: release
+      - name: Publish package to LAN share
+        shell: powershell
+        env:
+          LAN_SHARE_PATH: ${{ vars.LAN_SHARE_PATH }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:LAN_SHARE_PATH)) {
+            throw "Repository variable LAN_SHARE_PATH is not configured."
+          }
+          .\Deploy\Publish-LanRelease.ps1 -SourceDirectory ".\release" -SharePath $env:LAN_SHARE_PATH

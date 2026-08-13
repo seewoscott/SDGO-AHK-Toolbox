@@ -18,6 +18,7 @@ global g_ResolutionProfile := ""
 ; --- 加载库 ---
 #Include "Lib\ConfigManager.ahk"
 #Include "Lib\Logger.ahk"
+#Include "Lib\AutoUpdater.ahk"
 #Include "Lib\ScreenCapture.ahk"
 #Include "Lib\TargetLockDetector.ahk"
 #Include "Lib\CombatTargetDetector.ahk"
@@ -91,6 +92,9 @@ Init() {
             ExitApp(1)
         }
     }
+
+    ; 已编译客户端启动时检查局域网发布目录；开发时运行源码不会触发更新。
+    AutoUpdater.CheckAndApply(APP_VERSION)
 
     ; 注册退出/错误处理
     OnExit(ExitHandler, 1)
