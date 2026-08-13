@@ -36,8 +36,11 @@ jobs:
       - name: Run updater tests
         shell: powershell
         run: |
-          & $env:AHK_RUNTIME_PATH /ErrorStdOut ".\tests\AutoUpdaterTests.ahk"
-          if ($LASTEXITCODE -ne 0) { throw "AutoUpdater tests failed." }
+          # AutoHotkey64.exe is a GUI-subsystem binary: PowerShell's & operator
+          # does not capture its exit code ($LASTEXITCODE stays $null, and
+          # $null -ne 0 is $true). Use Start-Process -Wait -PassThru instead.
+          $proc = Start-Process -FilePath $env:AHK_RUNTIME_PATH -ArgumentList @('/ErrorStdOut', ".\tests\AutoUpdaterTests.ahk") -Wait -PassThru
+          if ($proc.ExitCode -ne 0) { throw "AutoUpdater tests failed (exit $($proc.ExitCode))." }
       - name: Compile AHK
         shell: powershell
         run: |
@@ -54,8 +57,9 @@ jobs:
           $entryScripts = @(Get-ChildItem -LiteralPath $buildRoot -File -Filter "*.ahk")
           if ($entryScripts.Count -ne 1) { throw "Expected exactly one root AHK entry script; found $($entryScripts.Count)." }
           Copy-Item -LiteralPath $entryScripts[0].FullName -Destination (Join-Path $buildRoot "Main.ahk")
-          & $compiler /in (Join-Path $buildRoot "Main.ahk") /out "SDGO-Toolbox.exe" /bin $env:AHK_RUNTIME_PATH
-          if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath "SDGO-Toolbox.exe")) { throw "AHK compilation failed." }
+          # Ahk2Exe.exe is also a GUI-subsystem binary — use Start-Process to get its real exit code.
+          $compileProc = Start-Process -FilePath $compiler -ArgumentList @('/in', (Join-Path $buildRoot "Main.ahk"), '/out', "SDGO-Toolbox.exe", '/bin', $env:AHK_RUNTIME_PATH) -Wait -PassThru
+          if ($compileProc.ExitCode -ne 0 -or -not (Test-Path -LiteralPath "SDGO-Toolbox.exe")) { throw "AHK compilation failed (exit $($compileProc.ExitCode))." }
       - name: Create distribution manifest
         shell: powershell
         run: |
