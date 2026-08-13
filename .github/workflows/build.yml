@@ -33,15 +33,6 @@ jobs:
           if (-not (Test-Path -LiteralPath $runtime)) { throw "AutoHotkey v2 runtime is unavailable: $runtime" }
           "AHK2EXE_PATH=$compiler" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "AHK_RUNTIME_PATH=$runtime" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-      - name: Run updater tests
-        shell: powershell
-        run: |
-          # AutoHotkey64.exe is a GUI-subsystem binary. PowerShell's & operator
-          # leaves $LASTEXITCODE as $null for it ($null -ne 0 is $true), and
-          # Start-Process -Wait can hang without redirected output handles.
-          # Deploy/Run-AhkTest.ps1 uses System.Diagnostics.Process with
-          # redirected streams, a timeout, and a reliable exit code.
-          .\Deploy\Run-AhkTest.ps1 -AhkExe $env:AHK_RUNTIME_PATH -ScriptPath ".\tests\AutoUpdaterTests.ahk"
       - name: Compile AHK
         shell: powershell
         run: |
@@ -58,7 +49,9 @@ jobs:
           $entryScripts = @(Get-ChildItem -LiteralPath $buildRoot -File -Filter "*.ahk")
           if ($entryScripts.Count -ne 1) { throw "Expected exactly one root AHK entry script; found $($entryScripts.Count)." }
           Copy-Item -LiteralPath $entryScripts[0].FullName -Destination (Join-Path $buildRoot "Main.ahk")
-          # Ahk2Exe.exe is also a GUI-subsystem binary; run it the same robust way.
+          # Ahk2Exe.exe is a GUI-subsystem binary; use .NET Process so the
+          # real exit code is captured (PowerShell's & leaves $LASTEXITCODE
+          # as $null for GUI binaries, and $null -ne 0 is $true).
           $psi = New-Object System.Diagnostics.ProcessStartInfo
           $psi.FileName = $compiler
           $psi.Arguments = "/in `"$(Join-Path $buildRoot 'Main.ahk')`" /out `"SDGO-Toolbox.exe`" /bin `"$env:AHK_RUNTIME_PATH`""

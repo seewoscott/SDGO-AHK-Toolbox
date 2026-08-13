@@ -116,7 +116,11 @@ class ConfigManager {
     ; 按分辨率读取坐标: 先查 [2880x1800] 节, 没有再查通用默认值
     static ReadCoord(section, key, defaultVal) {
         global g_ResolutionProfile
-        if (g_ResolutionProfile != "") {
+        ; IsSet() guards against referencing an undefined global. A bare
+        ; `global` + read of a never-defined variable makes AHK v2 raise a
+        ; dialog (hangs headless runners/tests); modules that include this
+        ; file without defining the global would otherwise hang.
+        if (IsSet(g_ResolutionProfile) && g_ResolutionProfile != "") {
             val := IniRead(this.g_IniPath, g_ResolutionProfile, key, "")
             if (val != "")
                 return this.ParseValue(val)
