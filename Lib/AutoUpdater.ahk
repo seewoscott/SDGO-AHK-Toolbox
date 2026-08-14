@@ -158,26 +158,17 @@ class AutoUpdater {
     }
 
     static RestartWithReplacement(stageExe, targetExe) {
-        batchFile := A_Temp "\SDGO-update-" A_TickCount ".cmd"
-        q := Chr(34)
-        ; 更新后用提权方式重启新 EXE。
-        ; 旧版用 start 从隐藏窗口启动, 新 EXE 未继承管理员令牌 →
-        ; 启动后再次 Run *RunAs 弹 UAC 框, 无人值守时卡死。
-        ; 现在批处理只负责替换文件, 重启交给 AHK 的 Run *RunAs
-        ; (Unicode 安全, 支持中文路径, 不会像 cmd 批处理那样代码页乱码)。
-        batch := "@echo off`r`n"
-            . "timeout /t 2 /nobreak >nul`r`n"
-            . "move /y " q stageExe q " " q targetExe q " >nul`r`n"
-            . "if errorlevel 1 exit /b 1`r`n"
-            . "del " q "%~f0" q "`r`n"
-        ; 批处理必须用 ANSI(CP0) 编码写入: cmd.exe 按系统代码页(中文=GBK)解析,
-        ; 若用 UTF-8 写入, 含中文的 EXE 路径(如 SDGO工具脚本.exe)会被 cmd 按
-        ; GBK 解码成乱码, 导致 move 失败或生成乱码文件名。
-        FileAppend(batch, batchFile, "CP0")
-        ; 隐藏运行替换批处理, 2 秒后它完成 move; 然后提权启动新 EXE
-        Run('"' A_ComSpec '" /c ""' batchFile '""', , "Hide")
-        Sleep(2500)
-        Run("*RunAs " q targetExe q, A_ScriptDir)
+        ; 更新替换 + 重启: 不用 FileAppend 写批处理 (cmd 代码页会导致中文路径乱码)。
+        ; 改用 PowerShell -Command 执行, 中文路径通过环境变量传递:
+        ;   - EnvSet 是 Unicode 安全 (AHK 原生宽字符)
+        ;   - PowerShell $env: 读取环境变量也是 Unicode
+        ;   - 命令本体是纯 ASCII, 无任何编码转换环节
+        EnvSet("SDGO_UPDATE_STAGE", stageExe)
+        EnvSet("SDGO_UPDATE_TARGET", targetExe)
+        psCmd := "Start-Sleep -Seconds 2; "
+            . "Move-Item -LiteralPath $env:SDGO_UPDATE_STAGE -Destination $env:SDGO_UPDATE_TARGET -Force; "
+            . "Start-Process -FilePath $env:SDGO_UPDATE_TARGET"
+        Run('powershell -NoProfile -WindowStyle Hidden -Command "' psCmd '"', , "Hide")
         ExitApp(0)
     }
 }
