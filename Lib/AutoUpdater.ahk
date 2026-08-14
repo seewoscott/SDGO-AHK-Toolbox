@@ -160,14 +160,21 @@ class AutoUpdater {
     static RestartWithReplacement(stageExe, targetExe) {
         batchFile := A_Temp "\SDGO-update-" A_TickCount ".cmd"
         q := Chr(34)
+        ; 更新后用提权方式重启新 EXE。
+        ; 旧版用 start 从隐藏窗口启动, 新 EXE 未继承管理员令牌 →
+        ; 启动后再次 Run *RunAs 弹 UAC 框, 无人值守时卡死。
+        ; 现在批处理只负责替换文件, 重启交给 AHK 的 Run *RunAs
+        ; (Unicode 安全, 支持中文路径, 不会像 cmd 批处理那样代码页乱码)。
         batch := "@echo off`r`n"
             . "timeout /t 2 /nobreak >nul`r`n"
             . "move /y " q stageExe q " " q targetExe q " >nul`r`n"
             . "if errorlevel 1 exit /b 1`r`n"
-            . "start " q q " " q targetExe q "`r`n"
             . "del " q "%~f0" q "`r`n"
         FileAppend(batch, batchFile, "UTF-8")
+        ; 隐藏运行替换批处理, 2 秒后它完成 move; 然后提权启动新 EXE
         Run('"' A_ComSpec '" /c ""' batchFile '""', , "Hide")
+        Sleep(2500)
+        Run("*RunAs " q targetExe q, A_ScriptDir)
         ExitApp(0)
     }
 }
