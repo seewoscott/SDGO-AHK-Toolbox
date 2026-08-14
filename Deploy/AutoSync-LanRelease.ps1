@@ -66,7 +66,7 @@ try {
     Write-Log "警告: 读取本地 version.json 失败, 视为无版本: $($_.Exception.Message)"
 }
 
-# ---- 4. 版本比较 ----
+# ---- 4. 版本比较 (含 SHA-256 一致性: 同版本号重新发布时也触发同步) ----
 function Compare-Version($a, $b) {
     $pa = $a.Split('.') | ForEach-Object { [int]$_ }
     $pb = $b.Split('.') | ForEach-Object { [int]$_ }
@@ -80,10 +80,43 @@ function Compare-Version($a, $b) {
     return 0
 }
 
+# 远程清单的 SHA-256 (Release 资产, 用 curl.exe 下载避免 Invoke-RestMethod 重定向问题)
+$remoteSha = $null
+foreach ($asset in $release.assets) {
+    if ($asset.name -eq "version.json") {
+        try {
+            $tmpJson = Join-Path $env:TEMP ("sdgo-remote-" + [guid]::NewGuid().ToString("N") + ".json")
+            curl.exe -sL -o $tmpJson $asset.browser_download_url | Out-Null
+            if (Test-Path -LiteralPath $tmpJson) {
+                $remoteManifest = Get-Content -LiteralPath $tmpJson -Raw -Encoding utf8 | ConvertFrom-Json
+                $remoteSha = $remoteManifest.sha256
+                Remove-Item -LiteralPath $tmpJson -Force -ErrorAction SilentlyContinue
+            }
+        } catch { }
+        break
+    }
+}
+
+# 本地清单的 SHA-256
+$localSha = $null
+if (Test-Path -LiteralPath $localManifest) {
+    try {
+        $lm = Get-Content -LiteralPath $localManifest -Raw -Encoding utf8 | ConvertFrom-Json
+        $localSha = $lm.sha256
+    } catch { }
+}
+
 $cmp = Compare-Version $remoteVersion $currentVersion
-if ($cmp -le 0) {
-    Write-Log "跳过: 无新版本 (远程 $remoteVersion <= 本地 $currentVersion)"
+if ($cmp -lt 0) {
+    Write-Log "跳过: 远程版本低于本地 (远程 $remoteVersion < 本地 $currentVersion)"
     exit 0
+}
+if ($cmp -eq 0 -and $remoteSha -and $localSha -and $remoteSha -ieq $localSha) {
+    Write-Log "跳过: 无新版本 (远程 $remoteVersion = 本地 $currentVersion, SHA-256 一致)"
+    exit 0
+}
+if ($cmp -eq 0) {
+    Write-Log "检测到同版本号重新发布 (远程 $remoteVersion, SHA-256 与本地不同), 重新同步..."
 }
 
 # ---- 5. 执行同步 ----
