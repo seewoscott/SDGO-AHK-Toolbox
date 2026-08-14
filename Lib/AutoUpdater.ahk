@@ -62,12 +62,12 @@ class AutoUpdater {
         localCopy := A_Temp "\SDGO-version-" A_TickCount ".json"
         try FileCopy(versionFile, localCopy, 1)
         catch as e {
-            Logger.Debug("Update check skipped: cannot read version manifest (" e.Message ")")
+            Logger.Debug("更新检查跳过: 无法读取版本清单 (" e.Message ")")
             return ""
         }
         try manifest := FileRead(localCopy, "UTF-8")
         catch as e {
-            Logger.Debug("Update check skipped: cannot read local manifest copy (" e.Message ")")
+            Logger.Debug("更新检查跳过: 无法读取本地清单副本 (" e.Message ")")
             return ""
         }
         finally FileDelete(localCopy)
@@ -85,41 +85,41 @@ class AutoUpdater {
         if (manifest = "")
             return false
         if !RegExMatch(manifest, '"version"\s*:\s*"([^"\r\n]+)"', &versionMatch) {
-            Logger.Warn("Update check skipped: version.json has no version")
+            Logger.Warn("更新检查跳过: version.json 缺少 version 字段")
             return false
         }
         remoteVersion := versionMatch[1]
         if (AutoUpdater.CompareVersions(remoteVersion, currentVersion) <= 0)
             return false
         if !RegExMatch(manifest, '"file_name"\s*:\s*"([^"\\/\r\n]+)"', &fileMatch) {
-            Logger.Warn("Update check skipped: version.json has an unsafe or missing file_name")
+            Logger.Warn("更新检查跳过: version.json 缺少或 file_name 不安全")
             return false
         }
         if !RegExMatch(manifest, '"sha256"\s*:\s*"([a-fA-F0-9]{64})"', &hashMatch) {
-            Logger.Warn("Update check skipped: version.json has no valid SHA-256")
+            Logger.Warn("更新检查跳过: version.json 没有有效的 SHA-256")
             return false
         }
         remoteExe := shareFolder "\" fileMatch[1]
         if !FileExist(remoteExe) {
-            Logger.Warn("Update check skipped: release executable is missing: " remoteExe)
+            Logger.Warn("更新检查跳过: 发布的可执行文件缺失: " remoteExe)
             return false
         }
         stageExe := A_Temp "\SDGO-update-" A_TickCount ".exe"
         try FileCopy(remoteExe, stageExe, 1)
         catch as e {
-            Logger.Warn("Update download failed: " e.Message)
+            Logger.Warn("更新下载失败: " e.Message)
             return false
         }
         if !FileExist(stageExe) {
-            Logger.Warn("Update download failed: staging file was not created")
+            Logger.Warn("更新下载失败: 暂存文件未创建")
             return false
         }
         if (StrLower(AutoUpdater.GetSha256(stageExe)) != StrLower(hashMatch[1])) {
-            Logger.Warn("Update download failed: SHA-256 mismatch")
+            Logger.Warn("更新下载失败: SHA-256 校验不匹配")
             try FileDelete(stageExe)
             return false
         }
-        Logger.Info("New version v" remoteVersion " found; applying update")
+        Logger.Info("发现新版本 v" remoteVersion "，正在应用更新")
         AutoUpdater.RestartWithReplacement(stageExe, A_ScriptFullPath)
         return true
     }
@@ -128,7 +128,7 @@ class AutoUpdater {
         command := "certutil -hashfile " Chr(34) filePath Chr(34) " SHA256"
         try output := ComObject("WScript.Shell").Exec(command).StdOut.ReadAll()
         catch as e {
-            Logger.Warn("Cannot calculate update SHA-256: " e.Message)
+            Logger.Warn("无法计算更新 SHA-256: " e.Message)
             return ""
         }
         if RegExMatch(output, "i)\b([a-f0-9]{64})\b", &match)
