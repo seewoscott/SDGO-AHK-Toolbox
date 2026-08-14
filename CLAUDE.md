@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 SDGO工具脚本 — 基于 **AutoHotkey v2** 的 SD高达私服（SDGO UNION 1.4.3）游戏自动化工具箱。通过 GUI 控制面板管理多个自动化模块（刷图、建房、看门狗等），每个模块以独立的状态机运行，由主脚本每秒轮询驱动。
 
-**要求**: AutoHotkey v2.0+，Windows，管理员权限（用于 taskkill 杀进程）。没有构建系统或 CI/CD。策略层（`Lib/*Policy.ahk`）有 `tests/` 下的单元测试；模块状态机、图像检测、键鼠输入等行为仍需手动验证。
+**要求**: AutoHotkey v2.0+，Windows，管理员权限（用于 taskkill 杀进程）。发布用 Ahk2Exe 编译成 EXE，由 GitHub Actions 构建并通过局域网共享目录热更新（见"构建与发布"）。策略层（`Lib/*Policy.ahk`）与更新器（`AutoUpdater.CompareVersions/GetSha256`）有 `tests/` 下的单元测试；模块状态机、图像检测、键鼠输入等行为仍需手动验证。
 
 ## 架构总览
 
@@ -16,6 +16,7 @@ SDGO工具脚本 — 基于 **AutoHotkey v2** 的 SD高达私服（SDGO UNION 1.
 SDGO工具脚本.ahk (Hub)
   ├── #Include → Lib/ConfigManager.ahk        (INI 读写 + 分辨率适配)
   ├── #Include → Lib/Logger.ahk               (分级日志 + 文件轮转)
+  ├── #Include → Lib/AutoUpdater.ahk          (局域网热更新)
   ├── #Include → Lib/ScreenCapture.ahk        (GDI BitBlt 截图)
   ├── #Include → Lib/TargetLockDetector.ahk   (锁定框检测)
   ├── #Include → Lib/CombatTargetDetector.ahk (敌方标记检测)
@@ -35,7 +36,7 @@ SDGO工具脚本.ahk (Hub)
   └── Modules/ScreenWatcher.ahk (异常画面监控, 未被 #Include, 独立运行)
 ```
 
-**包含顺序**: ConfigManager → Logger → ScreenCapture → TargetLockDetector → CombatTargetDetector → RoomSelfDetector → AutoMatchPolicy → RestartGamePolicy → FarmWatchdogPolicy → GameUtils → 各功能模块。ScreenWatcher 独立于主脚本，需要时可通过 INI 开关或单独启动。
+**包含顺序**: ConfigManager → Logger → AutoUpdater → ScreenCapture → TargetLockDetector → CombatTargetDetector → RoomSelfDetector → AutoMatchPolicy → RestartGamePolicy → FarmWatchdogPolicy → GameUtils → 各功能模块。ScreenWatcher 独立于主脚本，需要时可通过 INI 开关或单独启动。
 
 **运行时模型**: `SetTimer(GuiTick, 1000)` 每秒调用所有已加载模块的 `_Tick()`。每个模块在 Tick 内做像素/图像检测、状态判断和键鼠操作。
 
@@ -46,6 +47,7 @@ SDGO工具脚本.ahk (Hub)
 | `SDGO工具脚本.ahk` | 主脚本 — GUI、热键、模块调度、紧急停止 |
 | `Lib/ConfigManager.ahk` | 静态类，INI 读写 + 类型自动解析 + 分辨率适配坐标回退 |
 | `Lib/Logger.ahk` | 静态类，分级日志（DEBUG/INFO/WARN/ERROR）、缓冲刷盘、文件轮转 |
+| `Lib/AutoUpdater.ahk` | 静态类，从局域网共享目录检查/下载/校验新 EXE 并替换重启（仅编译版生效） |
 | `Lib/ScreenCapture.ahk` | GDI BitBlt 截图 + `CountColorMatches()` 颜色计数，被三个 Detector 共享 |
 | `Lib/TargetLockDetector.ahk` | 绿色锁定框检测 → `"LOCKED"/"UNLOCKED"` |
 | `Lib/CombatTargetDetector.ahk` | 红色敌方标记检测 → `{presence, count}` + 锁定状态 |
@@ -56,10 +58,12 @@ SDGO工具脚本.ahk (Hub)
 | `Lib/OverlayManager.ahk` | 透明覆盖层 GUI，显示房间/战斗/AutoMatch 状态 |
 | `Lib/GameUtils.ahk` | 静态类，游戏窗口交互中枢 — 窗口检测、ControlSend/Send 按键、ControlClick 鼠标、PixelSearch/ImageSearch、DoLogin() 登录流程 |
 | `Modules/*.ahk` | 功能模块，统一接口（见下文） |
-| `tests/*.ahk` | 策略层单元测试（见"测试"节） |
+| `tests/*.ahk` | 策略层/更新器单元测试（见"测试"节） |
 | `Data/Images/*.png` | 图像模板 — 用于 ImageSearch 检测游戏画面状态 |
 | `Data/Logs/` | 日志输出目录，文件名格式 `SDGO_yyyyMMdd_HHmmss.log` |
 | `Data/Settings.ini` | 用户配置文件 |
+| `Deploy/*.ps1` | 局域网热分发脚本（发布/同步/新设备接入），见"构建与发布" |
+| `.github/workflows/build.yml` | CI：推送 `v*` Tag 时编译 EXE + 生成 version.json + 发布到 LAN |
 
 ## 模块接口约定
 
@@ -217,21 +221,24 @@ RestartGame_Transition(newState) {
 
 ## 测试 (tests/)
 
-`tests/` 下的脚本是策略层的单元/集成测试，用 AutoHotkey64.exe 直接运行（无需构建）：
+`tests/` 下的脚本是纯单元测试，直接 `#Include` 被测类（无需加载游戏模块或运行 GUI），用 AutoHotkey64.exe 运行：
 
 ```powershell
-& 'D:\Program Files\AutoHotkey\v2\AutoHotkey64.exe' tests\farm_watchdog_policy_test.ahk
-& 'D:\Program Files\AutoHotkey\v2\AutoHotkey64.exe' tests\farm_watchdog_integration_test.ahk
+& 'D:\Program Files\AutoHotkey\v2\AutoHotkey64.exe' tests\AutoMatchPolicyTests.ahk
+& 'D:\Program Files\AutoHotkey\v2\AutoHotkey64.exe' tests\AutoUpdaterTests.ahk
 ```
 
-**约定**: 退出码 0=PASS、1=FAIL；`FileAppend("...", "*")` 输出到 stdout；结尾打印 `<name>: PASS`。两种测试模式：
-- **纯策略测试**（`*_policy_test.ahk`）: 直接 `#Include ..\Lib\*.ahk` 被测类，逐条断言。
-- **集成测试**（`*_integration_test.ahk`）: 先定义 stub（Logger/GameUtils 空实现、RestartGamePolicy 简化版、`RestartGame_Start()` 桩），再 `#Include` 真实模块，用临时 INI（`ConfigManager.g_IniPath` 指向 `A_Temp` 下文件）驱动 `_Init()`/`_Tick()` 验证状态转换，`finally` 恢复原路径并删临时文件。
+| 测试 | 覆盖 |
+|------|------|
+| `AutoMatchPolicyTests.ahk` | `AutoMatchPolicy` 纯决策 + `AutoMatchSweepRunner`/`AutoMatchPrimaryRunner` 状态机（用 stub Action 类替换 I/O） |
+| `AutoUpdaterTests.ahk` | `AutoUpdater.CompareVersions()` / `GetSha256()` 纯逻辑 |
+
+**约定**: 退出码 0=PASS、1=FAIL；`FileAppend("...", "*")` 输出到 stdout；结尾打印 `<name>: PASS` 并 `ExitApp(0)`。断言失败通过 `throw Error(...)` 触发非零退出码。纯逻辑类（Policy、CompareVersions 等）可被 `#Include` 后逐条断言；需要状态机的类用 stub 替换其 Action 依赖（参照 `AutoMatchPolicyTests` 的 `SweepTestActions`/`PrimaryTestActions`）。
 
 ## 模块间协作
 
 - **`ToggleModule("ModuleName")`**: 模块间触发机制。FarmWatchdog 和 ScreenWatcher 检测到异常时调用 `ToggleModule("RestartGame")` 触发自动重启建房（ToggleModule 内部会 Start 已停用的模块或 Stop 已运行的模块）
-- **RunCount 共享**: FarmWatchdog 通过 `FarmWatchdogPolicy.ResolveSource()` 解析当前监控源（优先级 单人刷图 > 多人刷图 > 刷场次），读取对应模块的 RunCount 做停滞检测；**源切换时重置基准与累计值**（见集成测试）
+- **RunCount 共享**: FarmWatchdog 通过 `FarmWatchdogPolicy.ResolveSource()` 解析当前监控源（优先级 单人刷图 > 多人刷图 > 刷场次），读取对应模块的 RunCount 做停滞检测；**源切换时重置基准与累计值**
 - **RestartGame 工作模式**: `RestartGame_Start()` 启动时按 `RestartGamePolicy.DetectWorkMode()` 自动判定 FARM/MATCH（有刷图模块启用→FARM，仅 AutoMatch→MATCH），登录阶段（`DoLogin` 前）还会重检一次并可在中途切换；`ShouldSelectTask()`=FARM 建房前选任务，`NeedsBattleModeSwitch()`=MATCH 需切换对战模式
 - **RestartGame 挂起看门狗**: `g_RestartGame_Enabled` 期间 FarmWatchdog 清空停滞/缺失计数并置监控源为 NONE，重启完成后再恢复
 - **图像回退**: AutoMatch 通过 `GameUtils.ResolveImagePath()` 4-tier 回退自动匹配服务端专属图像（`服务器名_` 前缀）
@@ -262,6 +269,7 @@ RestartGame_Transition(newState) {
 | `[Login]` | 登录流程坐标 (`Login_PasswordX/Y`, `Login_ConfirmX/Y`, `Channel_*`) |
 | `[Server.<Profile>]` | `Modules` (逗号分隔的模块清单), `GameExe`, `LauncherExe`, `GameDir`, `GamePath`, `LoginPassword`, `LoginChannelColor`, `LogDir` |
 | `[Logging]` | `LogLevel` (DEBUG/INFO/WARN/ERROR), `MaxLogFiles` (轮转保留数) |
+| `[Updater]` | `Enabled` (0/1), `ShareFolder` (局域网共享目录 UNC 路径), `VersionFile` (默认 `version.json`), `CheckIntervalMinutes` (周期检查间隔, 0=禁用) |
 
 ## 热键
 
@@ -342,6 +350,36 @@ RestartGame_Transition(newState) {
 
 仓库根目录另有 `AGENTS.md`（给 Codex 的指引），内容与 CLAUDE.md 基本平行但更新滞后。改动架构/接口/配置节时同步更新两份文件，避免两处指引不一致。
 
+## 构建与发布
+
+### 编译 (Ahk2Exe)
+
+发布产物 `SDGO工具脚本.exe` 由 Ahk2Exe 从 `SDGO工具脚本.ahk` 编译。**Ahk2Exe 在输入路径含非 ASCII 字符时会失败**，因此本地/CI 编译都先从 ASCII 目录暂存源码（`robocopy` 到临时目录，把入口重命名为 `Main.ahk`），再编译：
+
+```powershell
+# Ahk2Exe 是 GUI 子系统程序，需经 cmd.exe 运行；输出重定向到文件再查 %ERRORLEVEL%
+$compiler = "D:\Program Files\AutoHotkey\Compiler\Ahk2Exe.exe"
+$runtime  = "D:\Program Files\AutoHotkey\v2\AutoHotkey64.exe"
+cmd.exe /c "`"$compiler`" /in `"$buildRoot\Main.ahk`" /out `"$buildRoot\SDGO-Toolbox.exe`" /bin `"$runtime`" > out.log 2> err.log"
+```
+
+完整流程见 `.github/workflows/build.yml`（`build` job）。
+
+### 局域网热更新
+
+客户端只在**编译版**（`A_IsCompiled`）下更新，源码运行不触发。`Lib/AutoUpdater.ahk` 的流程：读共享目录 `[Updater] ShareFolder\version.json` → 比较 `version` 与内置 `APP_VERSION` → 下载 EXE 到临时目录 → `certutil` 校验 SHA-256 → 写批处理退出后 `move` 替换自身并重启。周期检查间隔由 `[Updater] CheckIntervalMinutes` 控制；GUI 设置页有"检查更新"按钮。
+
+`version.json` 清单格式（`Deploy/version.json.template`）:
+```json
+{ "version": "2.2.2", "file_name": "SDGO-Toolbox.exe", "sha256": "<lowercase hex>", "updated_at": "..." }
+```
+
+发布前把 `SDGO工具脚本.ahk` 顶部 `APP_VERSION` 改成与 Tag 一致（如 Tag `v2.2.2` → `2.2.2`）；CI 会拒绝 Tag 与内置版本不一致的发布。**注意：更新器只在远端版本 > 内置 `APP_VERSION` 时才替换自身**——仅重新编译不升版本，挂机客户端不会自动拉到修复。发布 bugfix 必须先升版本号再推 Tag。
+
+### 分发脚本 (Deploy/)
+
+推送 `v*` Tag 后 GitHub Actions 编译并生成 `version.json`。`deploy-lan` job 用标签 `self-hosted`/`windows`/`sdgo-lan` 的自托管 Runner 同步到 NAS；需在仓库 Variables 配置 `LAN_SHARE_PATH`。无自托管 Runner 时可用 `Deploy\Sync-ReleaseToLanShare.ps1` 手动同步（先写 EXE 校验 SHA-256，最后写 `version.json`，避免客户端读到未完整发布的版本）。`Deploy\Setup-Client.ps1` 用于新设备一键接入（生成 `Settings.ini` + 配置 `[Updater]`）。详见 `Deploy/README.md`。
+
 ## 调试与故障排查
 
 ```powershell
@@ -359,3 +397,4 @@ RestartGame_Transition(newState) {
 3. taskkill 失败 → 以管理员身份运行脚本
 4. 建房坐标偏移 → 用 F12 在游戏中重新抓取，更新 Settings.ini 中对应分辨率节的坐标
 5. 模块不响应 → 检查该服 `[Server.*]` 的 `Modules=` 字段是否包含模块名
+6. 日志出现 `脚本错误: Missing a required parameter. (line N, File: *#1)` → 运行时参数个数不匹配。AHK v2 对**普通函数/内置函数的字面调用**在加载期就校验参数个数（脚本直接起不来）；但**类静态方法调用、对象方法（`Map.Get` 等）、`Func.Call()`、`ObjBindMethod`** 等是运行期校验，错一个参数就会在运行时抛出此错误，被 `OnError` 捕获。`File: *#1` 表示错误来自编译后的 EXE（源码运行会显示真实 .ahk 路径）。**优先看日志里的调用栈**：`ErrorHandler()` 已把异常对象的 `.Stack` 属性写入日志，直接指明抛错函数与行号；仅当栈缺失时才把 `line N` 映射回 Ahk2Exe 压缩后的源码（去除空行/注释后 +1 偏移，偏移已实测恒定）逐一核对类方法/动态调用的实参个数。
