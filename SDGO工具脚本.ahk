@@ -95,6 +95,8 @@ Init() {
 
     ; 已编译客户端启动时检查局域网发布目录；开发时运行源码不会触发更新。
     AutoUpdater.CheckAndApply(APP_VERSION)
+    ; 挂机工具常驻运行: 定期检查新版本并自动热更新 (间隔见 [Updater] CheckIntervalMinutes)。
+    AutoUpdater.StartPeriodicCheck(APP_VERSION)
 
     ; 注册退出/错误处理
     OnExit(ExitHandler, 1)

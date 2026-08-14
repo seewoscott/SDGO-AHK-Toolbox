@@ -1,5 +1,21 @@
 ; LAN release updater. Stages the new EXE locally, then replaces it after exit.
 class AutoUpdater {
+    static s_CheckTimer := 0
+
+    ; 启动周期检查: 挂机工具长时间运行, 不能只靠启动时检查一次。
+    ; 间隔由 [Updater] CheckIntervalMinutes 配置 (默认 30 分钟, 0=禁用)。
+    static StartPeriodicCheck(currentVersion) {
+        if (!A_IsCompiled)
+            return false
+        intervalMin := ConfigManager.Read("Updater", "CheckIntervalMinutes", 30)
+        if (intervalMin <= 0)
+            return false
+        intervalMs := intervalMin * 60000
+        AutoUpdater.s_CheckTimer := SetTimer(AutoUpdater.CheckAndApply.Bind(currentVersion), intervalMs)
+        Logger.Info("周期更新检查已启动: 每 " intervalMin " 分钟一次")
+        return true
+    }
+
     static CheckAndApply(currentVersion) {
         if (!A_IsCompiled || !ConfigManager.Read("Updater", "Enabled", 1))
             return false
