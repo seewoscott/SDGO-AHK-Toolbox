@@ -318,7 +318,7 @@ RestartGame_DetectScene(target := "", retries := 1) {
 RestartGame_StepLog(step, action, scene, retry, elapsed := "") {
     extra := retry > 0 ? " (重试" retry "/3)" : ""
     timeStr := elapsed != "" ? " — 耗时 " Round(elapsed/1000, 1) "s" : ""
-    Logger.Debug("[Step" step "-" action "] 视觉: " scene . extra . timeStr)
+    Logger.Debug("[步骤" step "-" action "] 视觉: " scene . extra . timeStr)
 }
 
 ; 普通对战房的 in_room.png 容易因服务端 UI 差异漏检。
@@ -554,7 +554,7 @@ RestartGame_DoTeardownToLobby() {
         GameUtils.SendGameKeyOnce("Escape", 1000)
     }
     Sleep(3000)
-    RestartGame_Transition("CREATING_ROOM")
+    RestartGame_Transition("ROOM_CREATION")
 }
 
 ; === ERROR ===

@@ -9,7 +9,7 @@
 
 ; --- 常量定义 ---
 global APP_NAME := "SDGO工具脚本"
-global APP_VERSION := "2.2.3"
+global APP_VERSION := "2.2.4"
 global SCRIPT_DIR := A_ScriptDir
 global g_DesktopW := 0
 global g_DesktopH := 0
@@ -675,10 +675,13 @@ ExitHandler(exitReason, exitCode) {
 ; --- 错误回调 (由 OnError 注册) ---
 ErrorHandler(thrown, mode) {
     msg := "未知错误"
-    if (IsObject(thrown) && thrown.HasProp("Message"))
+    if (IsObject(thrown) && thrown.HasProp("Message")) {
         msg := thrown.Message " (line " thrown.Line ", File: " thrown.File ")"
-    else
+        if (thrown.HasProp("Stack") && thrown.Stack != "")
+            msg .= "`nStack: " thrown.Stack
+    } else {
         msg := String(thrown)
+    }
     Logger.Error("脚本错误: " msg)
     MsgBox("脚本错误:`n" msg, "SDGO工具脚本 错误", 16)
     return -1
