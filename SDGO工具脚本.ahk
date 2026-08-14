@@ -84,7 +84,9 @@ Init() {
     if (!A_IsAdmin) {
         Logger.Warn("未以管理员身份运行, 正在尝试提权...")
         try {
-            Run("*RunAs " A_ScriptFullPath, A_ScriptDir)
+            ; 路径必须加引号: EXE 路径可能含空格(macmini share)或中文(SDGO工具脚本.exe),
+            ; 不加引号 *RunAs 会把空格后的部分误当参数, 导致提权失败卡死。
+            Run('*RunAs "' A_ScriptFullPath '"', A_ScriptDir)
             ExitApp(0)
         } catch as e {
             Logger.Error("提权失败: " e.Message)

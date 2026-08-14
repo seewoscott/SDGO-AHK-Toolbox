@@ -165,9 +165,11 @@ class AutoUpdater {
         ;   - 命令本体是纯 ASCII, 无任何编码转换环节
         EnvSet("SDGO_UPDATE_STAGE", stageExe)
         EnvSet("SDGO_UPDATE_TARGET", targetExe)
+        ; Start-Process 用 -Verb RunAs 提权启动新 EXE: 直接以管理员运行,
+        ; 避免新 EXE 启动后再次走主脚本的"未提权→RunAs"二次弹窗。
         psCmd := "Start-Sleep -Seconds 2; "
             . "Move-Item -LiteralPath $env:SDGO_UPDATE_STAGE -Destination $env:SDGO_UPDATE_TARGET -Force; "
-            . "Start-Process -FilePath $env:SDGO_UPDATE_TARGET"
+            . "Start-Process -FilePath $env:SDGO_UPDATE_TARGET -Verb RunAs"
         Run('powershell -NoProfile -WindowStyle Hidden -Command "' psCmd '"', , "Hide")
         ExitApp(0)
     }
