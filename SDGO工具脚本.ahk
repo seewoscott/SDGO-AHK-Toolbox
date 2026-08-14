@@ -397,6 +397,14 @@ BuildGui() {
     g_AllSettingsControls["FarmWatchdog"] := [
         wdFarmText, editWDFarm, spinWDFarm, wdMatchText, editWDMatch, spinWDMatch]
 
+    ; ===== 更新 =====
+    g_Gui.SetFont("s10 bold")
+    g_Gui.Add("Text", "x20 y+20 w460 h30", "更新")
+    g_Gui.SetFont("s9 norm")
+    g_Gui.Add("Text", "x40 y+10 w200", "当前版本: v" APP_VERSION)
+    btnCheckUpdate := g_Gui.Add("Button", "x+20 yp-3 w120 h28 vBtnCheckUpdate", "检查更新")
+    btnCheckUpdate.OnEvent("Click", (*) => AutoUpdater.CheckNow(APP_VERSION))
+
     ; ===== 选项卡3: 日志 =====
     g_Tab.UseTab(3)
     g_LogEdit := g_Gui.Add("Edit", "x20 y+10 w460 h300 vLogEdit ReadOnly")
