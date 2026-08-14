@@ -1,4 +1,4 @@
-; SDGO Tool Script — User Config
+﻿; SDGO Tool Script — User Config
 ; All coords based on 1024x768 windowed mode (d3d9)
 ; 模板: 新设备部署用。坐标需按实际分辨率用 F12 捕获后填写。
 
@@ -78,7 +78,7 @@ GameExe=gonline.exe
 ; LAN shared folder containing SDGO-Toolbox.exe and version.json.
 ; Set ShareFolder blank to disable a configured distribution location.
 Enabled=1
-ShareFolder=\\192.168.124.2\Windows share
+ShareFolder=\\192.168.124.3\Windows share
 VersionFile=version.json
 ; 周期检查间隔(分钟): 挂机期间自动检测新版本, 0=仅启动时检查一次
 CheckIntervalMinutes=30

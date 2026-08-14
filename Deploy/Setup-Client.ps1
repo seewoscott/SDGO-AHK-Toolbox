@@ -8,12 +8,12 @@
 # 用法 (在新设备上, 从共享目录拷本脚本后运行):
 #   powershell -NoProfile -ExecutionPolicy Bypass -File Setup-Client.ps1
 # 可选参数:
-#   -SharePath  共享目录 (默认 \\192.168.124.2\Windows share)
+#   -SharePath  共享目录 (默认 \\192.168.124.3\Windows share)
 #   -InstallDir 安装目录 (默认 $env:USERPROFILE\Desktop\SDGO工具脚本)
 #   -Password   共享访问密码 (如共享需要凭据, 自动执行 net use)
 
 param(
-    [string]$SharePath  = "\\192.168.124.2\Windows share",
+    [string]$SharePath  = "\\192.168.124.3\Windows share",
     [string]$InstallDir = "$env:USERPROFILE\Desktop\SDGO工具脚本",
     [string]$Password   = ""
 )

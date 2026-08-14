@@ -7,7 +7,7 @@
 
 param(
     [string]$Repository = "seewoscott/SDGO-AHK-Toolbox",
-    [string]$SharePath  = "\\192.168.124.2\Windows share",
+    [string]$SharePath  = "\\192.168.124.3\Windows share",
     [string]$LogFile    = "$env:LOCALAPPDATA\SDGO-Toolbox\autosync.log"
 )
 
