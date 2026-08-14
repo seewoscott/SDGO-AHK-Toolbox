@@ -104,6 +104,13 @@ class AutoUpdater {
             Logger.Warn("更新检查跳过: 发布的可执行文件缺失: " remoteExe)
             return false
         }
+        ; 校验共享 EXE 的 SHA-256 与清单一致 (防止 Resilio 冲突等导致的
+        ; "清单版本超前但 EXE 未更新" 中间状态触发失败更新)
+        remoteExeHash := AutoUpdater.GetSha256(remoteExe)
+        if (remoteExeHash = "" || StrLower(remoteExeHash) != StrLower(hashMatch[1])) {
+            Logger.Warn("更新检查跳过: 共享 EXE 与 version.json 的 SHA-256 不匹配 (可能同步未完成或清单冲突), 等待下次检查")
+            return false
+        }
         stageExe := A_Temp "\SDGO-update-" A_TickCount ".exe"
         try FileCopy(remoteExe, stageExe, 1)
         catch as e {

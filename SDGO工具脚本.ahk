@@ -9,7 +9,7 @@
 
 ; --- 常量定义 ---
 global APP_NAME := "SDGO工具脚本"
-global APP_VERSION := "2.2.5"
+global APP_VERSION := "2.2.6"
 global SCRIPT_DIR := A_ScriptDir
 global g_DesktopW := 0
 global g_DesktopH := 0
