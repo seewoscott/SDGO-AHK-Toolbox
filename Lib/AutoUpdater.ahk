@@ -18,40 +18,60 @@ class AutoUpdater {
 
     ; 手动检查更新 (GUI 按钮): 立即检查共享目录并弹窗反馈结果。
     static CheckNow(currentVersion) {
+        title := "SDGO工具脚本 - 检查更新"
         if (!A_IsCompiled) {
-            MsgBox("当前为源码运行模式，不执行自动更新。", APP_NAME, 64)
+            MsgBox("当前为源码运行模式，不执行自动更新。", title, 64)
             return false
         }
         if (!ConfigManager.Read("Updater", "Enabled", 1)) {
-            MsgBox("更新功能已禁用 (Settings.ini [Updater] Enabled=0)。", APP_NAME, 48)
+            MsgBox("更新功能已禁用 (Settings.ini [Updater] Enabled=0)。", title, 48)
             return false
         }
         shareFolder := RTrim(ConfigManager.Read("Updater", "ShareFolder", ""), "\")
         if (shareFolder = "") {
-            MsgBox("未配置共享目录 (Settings.ini [Updater] ShareFolder 为空)。", APP_NAME, 48)
+            MsgBox("未配置共享目录 (Settings.ini [Updater] ShareFolder 为空)。", title, 48)
             return false
         }
         versionFile := shareFolder "\" ConfigManager.Read("Updater", "VersionFile", "version.json")
-        try manifest := FileRead(versionFile, "UTF-8")
-        catch as e {
-            MsgBox("无法读取更新清单:" "`n" versionFile "`n`n" e.Message, APP_NAME, 48)
+        manifest := AutoUpdater.ReadVersionFile(versionFile)
+        if (manifest = "") {
+            MsgBox("无法读取更新清单:" "`n" versionFile, title, 48)
             return false
         }
         if !RegExMatch(manifest, '"version"\s*:\s*"([^"\r\n]+)"', &versionMatch) {
-            MsgBox("更新清单格式错误: 缺少 version 字段。", APP_NAME, 48)
+            MsgBox("更新清单格式错误: 缺少 version 字段。", title, 48)
             return false
         }
         remoteVersion := versionMatch[1]
         if (AutoUpdater.CompareVersions(remoteVersion, currentVersion) <= 0) {
-            MsgBox("当前已是最新版本 v" currentVersion "。", APP_NAME, 64)
+            MsgBox("当前已是最新版本 v" currentVersion "。", title, 64)
             return false
         }
         ; 有新版本: 复用下载 + SHA-256 校验 + 替换重启流程
-        MsgBox("发现新版本 v" remoteVersion "，正在下载并更新...", APP_NAME, 64)
+        MsgBox("发现新版本 v" remoteVersion "，正在下载并更新...", title, 64)
         result := AutoUpdater.CheckAndApply(currentVersion)
         if (!result)
-            MsgBox("更新失败，请查看日志 (Data\Logs)。", APP_NAME, 48)
+            MsgBox("更新失败，请查看日志 (Data\Logs)。", title, 48)
         return result
+    }
+
+    ; 读取共享目录的 version.json。
+    ; AHK v2 的 FileRead 直接读 UNC 网络路径会报错误 67 (找不到网络名),
+    ; 但 FileCopy 对 UNC 正常 —— 先复制到本地临时文件再读, 绕开该限制。
+    static ReadVersionFile(versionFile) {
+        localCopy := A_Temp "\SDGO-version-" A_TickCount ".json"
+        try FileCopy(versionFile, localCopy, 1)
+        catch as e {
+            Logger.Debug("Update check skipped: cannot read version manifest (" e.Message ")")
+            return ""
+        }
+        try manifest := FileRead(localCopy, "UTF-8")
+        catch as e {
+            Logger.Debug("Update check skipped: cannot read local manifest copy (" e.Message ")")
+            return ""
+        }
+        finally FileDelete(localCopy)
+        return manifest
     }
 
     static CheckAndApply(currentVersion) {
@@ -61,11 +81,9 @@ class AutoUpdater {
         if (shareFolder = "")
             return false
         versionFile := shareFolder "\" ConfigManager.Read("Updater", "VersionFile", "version.json")
-        try manifest := FileRead(versionFile, "UTF-8")
-        catch as e {
-            Logger.Debug("Update check skipped: cannot read version manifest (" e.Message ")")
+        manifest := AutoUpdater.ReadVersionFile(versionFile)
+        if (manifest = "")
             return false
-        }
         if !RegExMatch(manifest, '"version"\s*:\s*"([^"\r\n]+)"', &versionMatch) {
             Logger.Warn("Update check skipped: version.json has no version")
             return false
