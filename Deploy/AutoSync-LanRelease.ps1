@@ -7,7 +7,7 @@
 
 param(
     [string]$Repository = "seewoscott/SDGO-AHK-Toolbox",
-    [string]$SharePath  = "\\192.168.124.3\Windows share",
+    [string]$SharePath  = "\\192.168.124.2\Windows share,\\192.168.124.3\Windows share",
     [string]$LogFile    = "$env:LOCALAPPDATA\SDGO-Toolbox\autosync.log"
 )
 
@@ -23,21 +23,26 @@ function Write-Log($msg) {
     Add-Content -LiteralPath $LogFile -Value $line -Encoding utf8
 }
 
-# ---- 1. 共享目录可达性 (区分: 网络不可达 vs 存储 I/O 故障) ----
-if (-not (Test-Path -LiteralPath $SharePath -PathType Container)) {
-    Write-Log "跳过: 共享目录不可访问: $SharePath (检查网络连接与 NAS 共享权限)"
+# ---- 1. 解析共享目录列表 (互为备份, 逗号分隔) ----
+$shareList = $SharePath -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' }
+if ($shareList.Count -eq 0) {
+    Write-Log "跳过: 未配置共享目录"
     exit 0
 }
 
-# 写测试: 确认共享目录可写 (I/O 故障时 Test-Path 可能误报可用)
-$probeFile = Join-Path $SharePath (".sync-probe-" + [guid]::NewGuid().ToString("N") + ".tmp")
-try {
-    Set-Content -LiteralPath $probeFile -Value "probe" -Encoding utf8
-    Remove-Item -LiteralPath $probeFile -Force -ErrorAction SilentlyContinue
-} catch {
-    Write-Log "跳过: 共享目录不可写: $SharePath (存储设备可能存在 I/O 故障, 请检查 NAS 硬盘)"
+# 选出第一个可用的共享目录用于版本判断 (任一可达即可继续)
+$primaryShare = $null
+foreach ($s in $shareList) {
+    if (Test-Path -LiteralPath $s -PathType Container) {
+        $primaryShare = $s
+        break
+    }
+}
+if (-not $primaryShare) {
+    Write-Log "跳过: 所有共享目录均不可访问: $($shareList -join ', ') (检查网络连接与 NAS 共享权限)"
     exit 0
 }
+Write-Log "使用主共享目录: $primaryShare"
 
 # ---- 2. 获取 GitHub 最新 Release ----
 try {
@@ -54,9 +59,9 @@ if (-not $remoteVersion) {
     exit 0
 }
 
-# ---- 3. 读取共享目录当前版本 ----
+# ---- 3. 读取主共享目录当前版本 ----
 $currentVersion = "0.0.0"
-$localManifest = Join-Path $SharePath "version.json"
+$localManifest = Join-Path $primaryShare "version.json"
 try {
     if (Test-Path -LiteralPath $localManifest) {
         $m = Get-Content -LiteralPath $localManifest -Raw -Encoding utf8 | ConvertFrom-Json
@@ -119,13 +124,21 @@ if ($cmp -eq 0) {
     Write-Log "检测到同版本号重新发布 (远程 $remoteVersion, SHA-256 与本地不同), 重新同步..."
 }
 
-# ---- 5. 执行同步 ----
+# ---- 5. 执行同步 (循环所有共享目录, 单个失败不中断其他) ----
 Write-Log "检测到新版本 $remoteVersion (本地 $currentVersion)，开始同步..."
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
-try {
-    & (Join-Path $scriptDir "Sync-ReleaseToLanShare.ps1") -Repository $Repository -SharePath $SharePath -Tag $release.tag_name
-    Write-Log "同步完成: v$remoteVersion -> $SharePath"
-} catch {
-    Write-Log "同步失败: $($_.Exception.Message) (详见上方错误; 常见原因: 共享目录只读或存储 I/O 故障)"
+$okCount = 0
+foreach ($share in $shareList) {
+    try {
+        Write-Log "同步到: $share ..."
+        & (Join-Path $scriptDir "Sync-ReleaseToLanShare.ps1") -Repository $Repository -SharePath $share -Tag $release.tag_name
+        Write-Log "同步完成: v$remoteVersion -> $share"
+        $okCount++
+    } catch {
+        Write-Log "同步失败: $share -> $($_.Exception.Message) (常见原因: 共享目录只读或存储 I/O 故障)"
+    }
+}
+if ($okCount -eq 0) {
+    Write-Log "全部共享目录同步失败"
     exit 0
 }
