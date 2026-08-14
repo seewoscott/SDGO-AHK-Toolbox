@@ -170,7 +170,10 @@ class AutoUpdater {
             . "move /y " q stageExe q " " q targetExe q " >nul`r`n"
             . "if errorlevel 1 exit /b 1`r`n"
             . "del " q "%~f0" q "`r`n"
-        FileAppend(batch, batchFile, "UTF-8")
+        ; 批处理必须用 ANSI(CP0) 编码写入: cmd.exe 按系统代码页(中文=GBK)解析,
+        ; 若用 UTF-8 写入, 含中文的 EXE 路径(如 SDGO工具脚本.exe)会被 cmd 按
+        ; GBK 解码成乱码, 导致 move 失败或生成乱码文件名。
+        FileAppend(batch, batchFile, "CP0")
         ; 隐藏运行替换批处理, 2 秒后它完成 move; 然后提权启动新 EXE
         Run('"' A_ComSpec '" /c ""' batchFile '""', , "Hide")
         Sleep(2500)
