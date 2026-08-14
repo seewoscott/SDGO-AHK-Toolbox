@@ -1,0 +1,262 @@
+; SDGO Tool Script — User Config
+; All coords based on 1024x768 windowed mode (d3d9)
+; 模板: 新设备部署用。坐标需按实际分辨率用 F12 捕获后填写。
+
+[2880x1800]
+Login_PasswordX=1179
+Login_PasswordY=716
+Login_ConfirmX=1024
+Login_ConfirmY=834
+Channel_TaskMode_X=603
+Channel_TaskMode_Y=1037
+Channel_ModeSwitch_X=1553
+Channel_ModeSwitch_Y=38
+Channel_BattleConfirm_X=911
+Channel_BattleConfirm_Y=703
+Channel_Select_X=1568
+Channel_Select_Y=446
+Launcher_Button_X=2288
+Launcher_Button_Y=1137
+Room_CreateBtn_X=1588
+Room_CreateBtn_Y=1041
+Room_NameField_X=1282
+Room_NameField_Y=554
+Room_ConfirmBtn_X=954
+Room_ConfirmBtn_Y=864
+MatchRoom_ConfirmBtn_X=947
+MatchRoom_ConfirmBtn_Y=985
+MatchRoom_ModeLeft_X=1103
+MatchRoom_ModeLeft_Y=715
+MatchRoom_MapRight_X=1024
+MatchRoom_MapRight_Y=645
+Room_TaskSelect_X=1023
+Room_TaskSelect_Y=641
+Channel_DetectPixel_X=801
+Channel_DetectPixel_Y=701
+
+[1920x1080]
+Login_PasswordX=608
+Login_PasswordY=360
+Login_ConfirmX=508
+Login_ConfirmY=417
+Channel_TaskMode_X=265
+Channel_TaskMode_Y=541
+Channel_ModeSwitch_X=776
+Channel_ModeSwitch_Y=19
+Channel_BattleConfirm_X=455
+Channel_BattleConfirm_Y=351
+Channel_Select_X=779
+Channel_Select_Y=220
+Launcher_Button_X=1143
+Launcher_Button_Y=563
+Room_CreateBtn_X=792
+Room_CreateBtn_Y=517
+Room_NameField_X=662
+Room_NameField_Y=275
+Room_ConfirmBtn_X=473
+Room_ConfirmBtn_Y=430
+MatchRoom_ConfirmBtn_X=473
+MatchRoom_ConfirmBtn_Y=492
+MatchRoom_ModeLeft_X=552
+MatchRoom_ModeLeft_Y=358
+MatchRoom_MapRight_X=512
+MatchRoom_MapRight_Y=323
+Room_TaskSelect_X=510
+Room_TaskSelect_Y=320
+Channel_DetectPixel_X=397
+Channel_DetectPixel_Y=350
+
+[General]
+; Global hotkey modifier for module toggles: ^=Ctrl, !=Alt, #=Win
+HotkeyModifier=^!
+; Emergency stop key — stops all modules
+EmergencyStop=Esc
+; Game process name
+GameExe=gonline.exe
+
+[Updater]
+; LAN shared folder containing SDGO-Toolbox.exe and version.json.
+; Set ShareFolder blank to disable a configured distribution location.
+Enabled=1
+ShareFolder=\\192.168.124.2\Windows share
+VersionFile=version.json
+; 周期检查间隔(分钟): 挂机期间自动检测新版本, 0=仅启动时检查一次
+CheckIntervalMinutes=30
+
+[Game]
+; Window size (for coordinate calculation)
+WindowWidth=1024
+WindowHeight=768
+; Input mode: control=ControlSend(background), setforeground=activate first then Send
+InputMode=control
+; Active server profile (matches [Server.*] section)
+ServerProfile=OC_ASIA
+
+[AutoFarm]
+Enabled=0
+; Max runs (0=unlimited)
+MaxRuns=10
+; Mission select coords
+Mission_Select_X=800
+Mission_Select_Y=200
+Mission_Confirm_X=512
+Mission_Confirm_Y=500
+; Phase timeouts (seconds)
+Timeout_Select=30
+Timeout_Queue=120
+Timeout_Loading=60
+Timeout_Battle=600
+Timeout_Result=30
+
+[Login]
+; Login flow coords (1024x768)
+Login_PasswordX=1179
+Login_PasswordY=716
+Login_ConfirmX=1024
+Login_ConfirmY=834
+Channel_TaskMode_X=603
+Channel_TaskMode_Y=1037
+; Lobby top-right quick switch: mission mode <-> battle mode
+Channel_ModeSwitch_X=1553
+Channel_ModeSwitch_Y=38
+Channel_BattleConfirm_X=911
+Channel_BattleConfirm_Y=703
+Channel_Select_X=1568
+Channel_Select_Y=446
+Channel_DetectPixel_X=801
+Channel_DetectPixel_Y=701
+
+[FarmWatchdog]
+Enabled=0
+; Independent positive-integer thresholds in seconds.
+Farm_Stall_Duration=180
+Match_Stall_Duration=1200
+NoGame_Duration=60
+
+[Logging]
+; Log level: DEBUG / INFO / WARN / ERROR
+LogLevel=DEBUG
+; Max recent log files to keep
+MaxLogFiles=10
+
+[Overlay]
+; Enable overlay on startup (0=disabled, 1=enabled)
+Enabled=0
+; Panel opacity (40-100)
+Opacity=80
+; Detection update interval (ticks, 1 tick = 1 second)
+UpdateInterval=3
+; Reposition interval (ticks, 1 tick = 1 second)
+PositionInterval=15
+; Font size (8-12)
+FontSize=9
+
+[RestartGame]
+Enabled=0
+; Run mode: once / loop
+Mode=once
+; Max loops (0=unlimited, loop mode only)
+MaxLoops=0
+; Delay between loops (seconds)
+LoopDelay=30
+; Max error retries
+MaxRetries=3
+
+; Window stabilize wait (ms) — wait for login screen after game window appears
+StabilizeWaitTime=10000
+
+; Launcher button coords (relative to launcher window client area)
+Launcher_Button_X=2288
+Launcher_Button_Y=1137
+; Launcher load wait time (seconds)
+Launcher_WaitTime=5
+
+; Menu nav — 3 steps to reach mission room creation screen (0=skip)
+; Step 1: open mission/battle menu
+Nav_Step1_X=0
+Nav_Step1_Y=0
+; Step 2: select "Mission Room" submenu
+Nav_Step2_X=0
+Nav_Step2_Y=0
+; Step 3: click "Create Room"
+Nav_Step3_X=0
+Nav_Step3_Y=0
+
+; Room creation coords
+Room_Create_X=512
+Room_Create_Y=500
+Room_MapSelect_X=400
+Room_MapSelect_Y=300
+Room_Confirm_X=512
+Room_Confirm_Y=500
+; Ordinary battle room confirmation button
+MatchRoom_ConfirmBtn_X=947
+MatchRoom_ConfirmBtn_Y=985
+; Ordinary battle room settings (2880x1800 fallback)
+MatchRoom_ModeLeft_X=1103
+MatchRoom_ModeLeft_Y=715
+MatchRoom_MapRight_X=1024
+MatchRoom_MapRight_Y=645
+
+; Phase timeouts (seconds)
+Timeout_KillProcess=15
+Timeout_LaunchGame=60
+Timeout_Stabilize=15
+Timeout_Login=60
+Timeout_NavigateMenu=30
+Timeout_CreateRoom=30
+Timeout_Teardown=30
+
+; ===== Server Profiles =====
+; Each [Server.*] section defines a server config.
+; Priority: [Server.<ServerProfile>] → [General] → hardcoded default.
+; Switch via Settings tab dropdown, or edit [Game] > ServerProfile directly.
+
+[Server.OC_ASIA]
+; Supported modules (comma-separated)
+Modules=RestartGame,FarmWatchdog,AutoFarm,AutoFarmMulti,AutoMatch
+; Confirming battle mode keeps the current channel tier and opens the battle lobby directly.
+BattleDirectLobby=1
+; Game process name
+GameExe=gonline.exe
+; Launcher filename
+LauncherExe=SDGO_Launcher.exe
+; Game directory (empty = Desktop\SDGO UNION 1.4.3)
+GameDir=
+; Launcher full path (empty = GameDir\LauncherExe)
+GamePath=
+; Login password
+LoginPassword=
+; Channel detect pixel color (0xRRGGBB)
+LoginChannelColor=0x071940
+; Log directory (empty = GameDir\zoG_log)
+LogDir=
+
+[AutoMatch]
+Enabled=0
+; Max matches (0=unlimited)
+MaxRuns=0
+
+; Room action retry interval (seconds)
+ReadyTimeout=5
+
+; Weapon selection keys
+PrimaryWeaponKey=1
+LockWeaponKey=2
+; Result pixel color (center 3x3 grid area)
+ResultColor=0x25B3D1
+
+; Attack duration (seconds) — how long to attack before checking for result screen
+AttackDuration=60
+
+[Server.OC_CHINA]
+; Supported modules (comma-separated)
+Modules=AutoMatch
+; Uncomment and edit below for your own private server:
+GameExe=gonline.exe
+LauncherExe=SDGO_Launcher.exe
+; GameDir=
+; GamePath=
+LoginPassword=
+LoginChannelColor=0x071940
+; LogDir=
